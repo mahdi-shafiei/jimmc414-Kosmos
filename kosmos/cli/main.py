@@ -240,8 +240,9 @@ def doctor():
     # Check database
     try:
         from kosmos.db import get_session
-        session = get_session()
-        session.close()
+        with get_session() as session:
+            # Just open and close to verify connection
+            pass
         checks.append(("Database", "Connected", True))
     except Exception:
         checks.append(("Database", "Error", False))

@@ -653,4 +653,4 @@ Research saturation: {self.metrics.saturation_ratio:.1%}
 
     def get_metrics_dict(self) -> Dict[str, Any]:
         """Get metrics as dictionary."""
-        return self.metrics.dict()
+        return self.metrics.model_dump()

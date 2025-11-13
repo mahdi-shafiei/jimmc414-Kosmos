@@ -425,7 +425,7 @@ class CodeValidator:
             reason_for_approval=reason,
             context={
                 "code": code[:500],  # First 500 chars
-                "report": report.dict(),
+                "report": report.model_dump(),
                 **(context or {})
             }
         )

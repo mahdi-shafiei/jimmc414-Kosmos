@@ -39,7 +39,7 @@ from kosmos.db.models import (
     Experiment as DBExperiment,
     ExperimentStatus,
 )
-from kosmos.db.operations import get_session
+from kosmos.db import get_session
 
 logger = logging.getLogger(__name__)
 
@@ -261,8 +261,7 @@ class ExperimentDesignerAgent(BaseAgent):
 
     def _load_hypothesis(self, hypothesis_id: str) -> Hypothesis:
         """Load hypothesis from database."""
-        session = next(get_session())
-        try:
+        with get_session() as session:
             db_hypothesis = session.query(DBHypothesis).filter_by(id=hypothesis_id).first()
             if not db_hypothesis:
                 raise ValueError(f"Hypothesis {hypothesis_id} not found in database")
@@ -278,8 +277,6 @@ class ExperimentDesignerAgent(BaseAgent):
                 novelty_score=db_hypothesis.novelty_score,
                 priority_score=db_hypothesis.priority_score,
             )
-        finally:
-            session.close()
 
     def _select_experiment_type(
         self,
@@ -706,32 +703,29 @@ Return ONLY a JSON object with suggested enhancements (keep it concise).
 
     def _store_protocol(self, protocol: ExperimentProtocol, hypothesis: Hypothesis) -> None:
         """Store protocol in database."""
-        session = next(get_session())
         try:
-            # Create database experiment
-            db_experiment = DBExperiment(
-                id=protocol.id or str(uuid.uuid4()),
-                hypothesis_id=protocol.hypothesis_id,
-                name=protocol.name,
-                description=protocol.description,
-                experiment_type=protocol.experiment_type.value,
-                status=ExperimentStatus.CREATED.value,
-                protocol=protocol.to_dict(),
-                created_at=datetime.utcnow(),
-            )
+            with get_session() as session:
+                # Create database experiment
+                db_experiment = DBExperiment(
+                    id=protocol.id or str(uuid.uuid4()),
+                    hypothesis_id=protocol.hypothesis_id,
+                    name=protocol.name,
+                    description=protocol.description,
+                    experiment_type=protocol.experiment_type.value,
+                    status=ExperimentStatus.CREATED.value,
+                    protocol=protocol.to_dict(),
+                    created_at=datetime.utcnow(),
+                )
 
-            session.add(db_experiment)
-            session.commit()
+                session.add(db_experiment)
+                session.commit()
 
-            protocol.id = db_experiment.id
-            logger.info(f"Stored protocol {protocol.id} in database")
+                protocol.id = db_experiment.id
+                logger.info(f"Stored protocol {protocol.id} in database")
 
         except Exception as e:
-            session.rollback()
             logger.error(f"Error storing protocol: {e}")
             raise
-        finally:
-            session.close()
 
     def list_templates(
         self,

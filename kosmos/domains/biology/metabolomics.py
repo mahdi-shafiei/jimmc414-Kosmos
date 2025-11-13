@@ -401,7 +401,7 @@ class MetabolomicsAnalyzer:
             return []
 
         # Convert to DataFrame for easier grouping
-        results_df = pd.DataFrame([r.dict() for r in results])
+        results_df = pd.DataFrame([r.model_dump() for r in results])
 
         # Filter by category if specified
         if category_filter:

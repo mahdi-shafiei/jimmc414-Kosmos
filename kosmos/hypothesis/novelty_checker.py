@@ -19,7 +19,7 @@ from kosmos.literature.base_client import PaperMetadata
 from kosmos.knowledge.embeddings import get_embedder
 from kosmos.knowledge.vector_db import get_vector_db
 from kosmos.db.models import Hypothesis as DBHypothesis
-from kosmos.db.operations import get_session
+from kosmos.db import get_session
 
 logger = logging.getLogger(__name__)
 
@@ -258,53 +258,49 @@ class NoveltyChecker:
             List[Hypothesis]: Similar existing hypotheses
         """
         try:
-            session = get_session()
+            with get_session() as session:
+                # Query hypotheses in same domain
+                db_hypotheses = session.query(DBHypothesis).filter(
+                    DBHypothesis.domain == hypothesis.domain
+                ).all()
 
-            # Query hypotheses in same domain
-            db_hypotheses = session.query(DBHypothesis).filter(
-                DBHypothesis.domain == hypothesis.domain
-            ).all()
+                # Convert to Pydantic models
+                existing_hypotheses = []
+                for db_hyp in db_hypotheses:
+                    # Skip self if it's already in DB
+                    if hypothesis.id and db_hyp.id == hypothesis.id:
+                        continue
 
-            # Convert to Pydantic models
-            existing_hypotheses = []
-            for db_hyp in db_hypotheses:
-                # Skip self if it's already in DB
-                if hypothesis.id and db_hyp.id == hypothesis.id:
-                    continue
+                    hyp = Hypothesis(
+                        id=db_hyp.id,
+                        research_question=db_hyp.research_question,
+                        statement=db_hyp.statement,
+                        rationale=db_hyp.rationale,
+                        domain=db_hyp.domain,
+                        created_at=db_hyp.created_at,
+                        updated_at=db_hyp.updated_at
+                    )
+                    existing_hypotheses.append(hyp)
 
-                hyp = Hypothesis(
-                    id=db_hyp.id,
-                    research_question=db_hyp.research_question,
-                    statement=db_hyp.statement,
-                    rationale=db_hyp.rationale,
-                    domain=db_hyp.domain,
-                    created_at=db_hyp.created_at,
-                    updated_at=db_hyp.updated_at
+                # Filter by similarity
+                similar = []
+                for existing in existing_hypotheses:
+                    similarity = self._compute_hypothesis_similarity(hypothesis, existing)
+                    if similarity >= 0.5:  # Lower threshold for preliminary filtering
+                        similar.append(existing)
+
+                # Sort by similarity (highest first)
+                similar.sort(
+                    key=lambda h: self._compute_hypothesis_similarity(hypothesis, h),
+                    reverse=True
                 )
-                existing_hypotheses.append(hyp)
 
-            # Filter by similarity
-            similar = []
-            for existing in existing_hypotheses:
-                similarity = self._compute_hypothesis_similarity(hypothesis, existing)
-                if similarity >= 0.5:  # Lower threshold for preliminary filtering
-                    similar.append(existing)
-
-            # Sort by similarity (highest first)
-            similar.sort(
-                key=lambda h: self._compute_hypothesis_similarity(hypothesis, h),
-                reverse=True
-            )
-
-            logger.info(f"Found {len(similar)} similar existing hypotheses")
-            return similar
+                logger.info(f"Found {len(similar)} similar existing hypotheses")
+                return similar
 
         except Exception as e:
             logger.error(f"Error checking existing hypotheses: {e}", exc_info=True)
             return []
-
-        finally:
-            session.close()
 
     def _compute_similarity(
         self,

@@ -586,4 +586,4 @@ class MemoryStore:
                 for memory in memories
             ]
 
-        return [memory.dict() for memory in memories]
+        return [memory.model_dump() for memory in memories]

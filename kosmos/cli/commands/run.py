@@ -116,7 +116,11 @@ def run_research(
         config_obj.claude.enable_cache = not no_cache
 
         # Create research director
-        director = ResearchDirectorAgent(config=config_obj)
+        director = ResearchDirectorAgent(
+            research_question=question,
+            domain=domain,
+            config=config_obj
+        )
 
         # Run research with live progress
         results = run_with_progress(director, question, max_iterations)

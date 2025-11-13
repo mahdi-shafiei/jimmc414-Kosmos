@@ -185,7 +185,7 @@ class FeedbackLoop:
                 source=result.id,
                 data={
                     "pattern_id": pattern_id,
-                    "pattern": pattern.dict(),
+                    "pattern": pattern.model_dump(),
                     "action": "increase_priority",
                     "target": "similar_hypotheses"
                 },
@@ -233,7 +233,7 @@ class FeedbackLoop:
                 source=result.id,
                 data={
                     "pattern_id": pattern_id,
-                    "pattern": pattern.dict(),
+                    "pattern": pattern.model_dump(),
                     "action": "avoid_pattern",
                     "recommended_fixes": pattern.recommended_fixes
                 },
@@ -284,7 +284,7 @@ class FeedbackLoop:
             },
             experiment_design={
                 "test_type": result.primary_test,
-                "sample_size": result.metadata.dict() if hasattr(result, 'metadata') else {}
+                "sample_size": result.metadata.model_dump() if hasattr(result, 'metadata') else {}
             },
             statistical_approach={
                 "p_value": result.primary_p_value,

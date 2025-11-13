@@ -194,20 +194,17 @@ class HealthChecker:
         try:
             from kosmos.db import get_session
 
-            session = get_session()
+            with get_session() as session:
+                # Try a simple query
+                start_time = time.time()
+                session.execute("SELECT 1")
+                query_time = time.time() - start_time
 
-            # Try a simple query
-            start_time = time.time()
-            session.execute("SELECT 1")
-            query_time = time.time() - start_time
-
-            session.close()
-
-            return {
-                "status": "healthy",
-                "response_time_ms": round(query_time * 1000, 2),
-                "details": "Database connection successful"
-            }
+                return {
+                    "status": "healthy",
+                    "response_time_ms": round(query_time * 1000, 2),
+                    "details": "Database connection successful"
+                }
 
         except Exception as e:
             logger.error(f"Database health check failed: {e}")

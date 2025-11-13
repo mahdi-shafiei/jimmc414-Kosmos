@@ -24,7 +24,7 @@ from kosmos.models.hypothesis import (
 from kosmos.literature.unified_search import UnifiedLiteratureSearch
 from kosmos.literature.base_client import PaperMetadata
 from kosmos.db.models import Hypothesis as DBHypothesis, HypothesisStatus as DBHypothesisStatus
-from kosmos.db.operations import get_session
+from kosmos.db import get_session
 
 logger = logging.getLogger(__name__)
 
@@ -439,38 +439,33 @@ No explanation needed."""
             Optional[str]: Hypothesis ID if successful
         """
         try:
-            session = get_session()
+            with get_session() as session:
+                # Convert to DB model
+                db_hypothesis = DBHypothesis(
+                    id=hypothesis.id or str(uuid.uuid4()),
+                    research_question=hypothesis.research_question,
+                    statement=hypothesis.statement,
+                    rationale=hypothesis.rationale,
+                    domain=hypothesis.domain,
+                    status=DBHypothesisStatus.GENERATED,
+                    novelty_score=hypothesis.novelty_score,
+                    testability_score=hypothesis.testability_score,
+                    confidence_score=hypothesis.confidence_score,
+                    related_papers=hypothesis.related_papers,
+                    created_at=hypothesis.created_at,
+                    updated_at=hypothesis.updated_at
+                )
 
-            # Convert to DB model
-            db_hypothesis = DBHypothesis(
-                id=hypothesis.id or str(uuid.uuid4()),
-                research_question=hypothesis.research_question,
-                statement=hypothesis.statement,
-                rationale=hypothesis.rationale,
-                domain=hypothesis.domain,
-                status=DBHypothesisStatus.GENERATED,
-                novelty_score=hypothesis.novelty_score,
-                testability_score=hypothesis.testability_score,
-                confidence_score=hypothesis.confidence_score,
-                related_papers=hypothesis.related_papers,
-                created_at=hypothesis.created_at,
-                updated_at=hypothesis.updated_at
-            )
+                session.add(db_hypothesis)
+                session.commit()
 
-            session.add(db_hypothesis)
-            session.commit()
-
-            logger.info(f"Stored hypothesis {db_hypothesis.id} in database")
-            hypothesis.id = db_hypothesis.id
-            return db_hypothesis.id
+                logger.info(f"Stored hypothesis {db_hypothesis.id} in database")
+                hypothesis.id = db_hypothesis.id
+                return db_hypothesis.id
 
         except Exception as e:
             logger.error(f"Error storing hypothesis: {e}", exc_info=True)
-            session.rollback()
             return None
-
-        finally:
-            session.close()
 
     def get_hypothesis_by_id(self, hypothesis_id: str) -> Optional[Hypothesis]:
         """
@@ -483,36 +478,33 @@ No explanation needed."""
             Optional[Hypothesis]: Hypothesis if found
         """
         try:
-            session = get_session()
-            db_hyp = session.query(DBHypothesis).filter(DBHypothesis.id == hypothesis_id).first()
+            with get_session() as session:
+                db_hyp = session.query(DBHypothesis).filter(DBHypothesis.id == hypothesis_id).first()
 
-            if not db_hyp:
-                return None
+                if not db_hyp:
+                    return None
 
-            # Convert DB model to Pydantic model
-            hypothesis = Hypothesis(
-                id=db_hyp.id,
-                research_question=db_hyp.research_question,
-                statement=db_hyp.statement,
-                rationale=db_hyp.rationale,
-                domain=db_hyp.domain,
-                status=HypothesisStatus(db_hyp.status.value),
-                testability_score=db_hyp.testability_score,
-                novelty_score=db_hyp.novelty_score,
-                confidence_score=db_hyp.confidence_score,
-                related_papers=db_hyp.related_papers or [],
-                created_at=db_hyp.created_at,
-                updated_at=db_hyp.updated_at
-            )
+                # Convert DB model to Pydantic model
+                hypothesis = Hypothesis(
+                    id=db_hyp.id,
+                    research_question=db_hyp.research_question,
+                    statement=db_hyp.statement,
+                    rationale=db_hyp.rationale,
+                    domain=db_hyp.domain,
+                    status=HypothesisStatus(db_hyp.status.value),
+                    testability_score=db_hyp.testability_score,
+                    novelty_score=db_hyp.novelty_score,
+                    confidence_score=db_hyp.confidence_score,
+                    related_papers=db_hyp.related_papers or [],
+                    created_at=db_hyp.created_at,
+                    updated_at=db_hyp.updated_at
+                )
 
-            return hypothesis
+                return hypothesis
 
         except Exception as e:
             logger.error(f"Error retrieving hypothesis: {e}", exc_info=True)
             return None
-
-        finally:
-            session.close()
 
     def list_hypotheses(
         self,
@@ -532,41 +524,38 @@ No explanation needed."""
             List[Hypothesis]: Matching hypotheses
         """
         try:
-            session = get_session()
-            query = session.query(DBHypothesis)
+            with get_session() as session:
+                query = session.query(DBHypothesis)
 
-            if domain:
-                query = query.filter(DBHypothesis.domain == domain)
+                if domain:
+                    query = query.filter(DBHypothesis.domain == domain)
 
-            if status:
-                db_status = DBHypothesisStatus(status.value)
-                query = query.filter(DBHypothesis.status == db_status)
+                if status:
+                    db_status = DBHypothesisStatus(status.value)
+                    query = query.filter(DBHypothesis.status == db_status)
 
-            query = query.order_by(DBHypothesis.created_at.desc()).limit(limit)
+                query = query.order_by(DBHypothesis.created_at.desc()).limit(limit)
 
-            hypotheses = []
-            for db_hyp in query.all():
-                hypothesis = Hypothesis(
-                    id=db_hyp.id,
-                    research_question=db_hyp.research_question,
-                    statement=db_hyp.statement,
-                    rationale=db_hyp.rationale,
-                    domain=db_hyp.domain,
-                    status=HypothesisStatus(db_hyp.status.value),
-                    testability_score=db_hyp.testability_score,
-                    novelty_score=db_hyp.novelty_score,
-                    confidence_score=db_hyp.confidence_score,
-                    related_papers=db_hyp.related_papers or [],
-                    created_at=db_hyp.created_at,
-                    updated_at=db_hyp.updated_at
-                )
-                hypotheses.append(hypothesis)
+                hypotheses = []
+                for db_hyp in query.all():
+                    hypothesis = Hypothesis(
+                        id=db_hyp.id,
+                        research_question=db_hyp.research_question,
+                        statement=db_hyp.statement,
+                        rationale=db_hyp.rationale,
+                        domain=db_hyp.domain,
+                        status=HypothesisStatus(db_hyp.status.value),
+                        testability_score=db_hyp.testability_score,
+                        novelty_score=db_hyp.novelty_score,
+                        confidence_score=db_hyp.confidence_score,
+                        related_papers=db_hyp.related_papers or [],
+                        created_at=db_hyp.created_at,
+                        updated_at=db_hyp.updated_at
+                    )
+                    hypotheses.append(hypothesis)
 
-            return hypotheses
+                return hypotheses
 
         except Exception as e:
             logger.error(f"Error listing hypotheses: {e}", exc_info=True)
             return []
-
-        finally:
-            session.close()

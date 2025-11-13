@@ -642,7 +642,7 @@ class ResearchDirectorAgent(BaseAgent):
         """Send request to ConvergenceDetector to check if research is complete."""
         content = {
             "action": "check_convergence",
-            "research_plan": self.research_plan.dict(),
+            "research_plan": self.research_plan.model_dump(),
             "context": context or {}
         }
 

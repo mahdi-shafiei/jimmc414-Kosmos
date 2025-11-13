@@ -130,7 +130,7 @@ domain-extended = [
 ]
 
 [project.scripts]
-kosmos = "kosmos.cli.main:app"
+kosmos = "kosmos.cli.main:cli_entrypoint"
 
 [project.urls]
 Homepage = "https://github.com/your-org/kosmos-ai-scientist"

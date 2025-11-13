@@ -572,7 +572,7 @@ class TestFeedbackApplication:
             source="result_001",
             data={
                 "pattern_id": "success_1",
-                "pattern": pattern.dict(),
+                "pattern": pattern.model_dump(),
                 "action": "increase_priority",
                 "target": "similar_hypotheses",
             },
@@ -599,7 +599,7 @@ class TestFeedbackApplication:
             source="result_002",
             data={
                 "pattern_id": "failure_1",
-                "pattern": pattern.dict(),
+                "pattern": pattern.model_dump(),
                 "action": "avoid_pattern",
                 "recommended_fixes": pattern.recommended_fixes,
             },

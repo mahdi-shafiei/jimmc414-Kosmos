@@ -47,7 +47,7 @@ class EnvironmentSnapshot(BaseModel):
 
     def to_dict(self) -> Dict[str, Any]:
         """Convert to dictionary."""
-        return self.dict()
+        return self.model_dump()
 
     def get_hash(self) -> str:
         """Get hash of environment for comparison."""

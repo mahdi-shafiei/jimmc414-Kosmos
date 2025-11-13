@@ -169,7 +169,7 @@ class SafetyGuardrails:
             allow_subprocess=requested_limits.allow_subprocess and self.default_resource_limits.allow_subprocess
         )
 
-        logger.debug(f"Enforced resource limits: {enforced.dict()}")
+        logger.debug(f"Enforced resource limits: {enforced.model_dump()}")
         return enforced
 
     def check_emergency_stop(self):
@@ -345,7 +345,7 @@ class SafetyGuardrails:
         # Write to log file (JSONL format)
         try:
             with open(self.incident_log_path, 'a') as f:
-                f.write(json.dumps(incident.dict(), default=str) + '\n')
+                f.write(json.dumps(incident.model_dump(), default=str) + '\n')
             logger.info(f"Safety incident logged: {incident.incident_id}")
         except Exception as e:
             logger.error(f"Error logging incident: {e}")
