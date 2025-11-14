@@ -2,14 +2,14 @@
 
 > Autonomous AI scientist for hypothesis generation, experimental design, and iterative scientific discovery. Supports Claude, OpenAI, and local models.
 
-[![Version](https://img.shields.io/badge/version-1.0.0-blue.svg)](https://github.com/jimmc414/Kosmos)
+[![Version](https://img.shields.io/badge/version-0.2.0-blue.svg)](https://github.com/jimmc414/Kosmos)
 [![Status](https://img.shields.io/badge/status-production-blue.svg)](https://github.com/jimmc414/Kosmos)
 [![Tests](https://img.shields.io/badge/tests-90%25%20coverage-blue.svg)](https://github.com/jimmc414/Kosmos)
 [![Performance](https://img.shields.io/badge/performance-20--40×%20faster-blue.svg)](https://github.com/jimmc414/Kosmos)
 
 Kosmos is an open-source implementation of an autonomous AI scientist that can conduct complete research cycles: from literature analysis and hypothesis generation through experimental design, execution, analysis, and iterative refinement.
 
-**v1.0 Production Release** - Complete with 20-40× performance improvements, comprehensive testing, and enterprise deployment support.
+**v0.2.0 Multi-Provider Release** - Now supports Anthropic Claude, OpenAI GPT, and local models (Ollama, LM Studio) with configuration-driven provider switching. Includes 20-40× performance improvements, comprehensive testing, and production deployment support.
 
 ## Features
 
@@ -73,7 +73,7 @@ OPENAI_MODEL=llama3.1:70b
 - **Comprehensive Testing**: 90%+ test coverage across all components
 
 ### Developer Experience
-- **Flexible Integration**: Supports both Anthropic API and Claude Code CLI
+- **Flexible Integration**: Supports Anthropic Claude, OpenAI GPT, and local models (Ollama, LM Studio)
 - **Proven Analysis Patterns**: Integrates battle-tested statistical methods
 - **Literature Integration**: Automated paper search, summarization, and novelty checking
 - **Rich Documentation**: 10,000+ lines across user guides, API docs, and examples
@@ -96,7 +96,7 @@ kosmos cache --stats
 ```
 
 **Cache Types**:
-- **Claude Cache**: LLM response caching (25-35% hit rate)
+- **LLM Response Cache**: API response caching (25-35% hit rate with Anthropic prompt caching)
 - **Experiment Cache**: Computational result caching (40-50% hit rate)
 - **Embedding Cache**: Vector embedding caching (in-memory, fast)
 - **General Cache**: Miscellaneous data caching
@@ -107,33 +107,41 @@ kosmos cache --stats
 - Improved reliability (cached responses always available)
 - Lower environmental impact
 
-### Automatic Model Selection
+**Note:** Prompt caching with significant cost savings is currently available when using Anthropic Claude. OpenAI and local providers use in-memory response caching only.
 
-Kosmos intelligently selects between Claude models based on task complexity:
+### Automatic Model Selection (Anthropic Only)
+
+When using Anthropic as your LLM provider, Kosmos intelligently selects between Claude models based on task complexity:
 
 - **Claude Sonnet 4.5**: Complex reasoning, hypothesis generation, analysis
 - **Claude Haiku 4**: Simple tasks, data extraction, formatting
 
 This reduces costs by **15-20%** while maintaining quality.
 
+**Note:** This feature is specific to Anthropic Claude. OpenAI and other providers use a single configured model.
+
 ### Expected Performance
 
-Typical research run characteristics:
+Typical research run characteristics (using Anthropic Claude):
 
 - **Duration**: 30 minutes to 2 hours
 - **Iterations**: 5-15 iterations
 - **API Calls**: 50-200 calls
-- **Cost**: $5-$50 with caching (without caching: $8-$75)
-- **Cache Hit Rate**: 30-40% on subsequent runs
+- **Cost**: $5-$50 with caching (without caching: $8-$75) **[Anthropic pricing]**
+- **Cache Hit Rate**: 30-40% on subsequent runs **[Anthropic prompt caching]**
+
+**Note:** Costs vary by provider. OpenAI pricing may differ. Local models (Ollama/LM Studio) have $0 API costs.
 
 ## Quick Start
 
 ### Prerequisites
 
 - Python 3.11 or 3.12
-- One of the following:
-  - **Option A**: Anthropic API key (pay-per-use)
-  - **Option B**: Claude Code CLI installed (Max subscription)
+- **LLM Provider** - Choose one:
+  - **Anthropic Claude** (default) - API key (pay-per-use) or Claude Code CLI (Max subscription)
+  - **OpenAI GPT** - API key for GPT models
+  - **Ollama** - Free local models (no API key needed)
+  - **Other providers** - See [Provider Setup Guide](docs/providers/README.md)
 
 ### Installation
 
@@ -388,7 +396,7 @@ kosmos version
 #   - Kosmos version
 #   - Python version
 #   - Platform information
-#   - Anthropic SDK version
+#   - LLM provider and SDK version
 ```
 
 #### `kosmos info` - System Status
@@ -431,7 +439,7 @@ kosmos info
           │                                     │
       ┌───▼───────┐                    ┌────────▼──────┐
       │ LLM Client│                    │   Execution   │
-      │  (Claude) │                    │    Engine     │
+      │Multi-Provider│                 │    Engine     │
       └───┬───────┘                    └────────┬──────┘
           │                                     │
       ┌───▼──────────────┐              ┌──────▼────────┐
@@ -452,14 +460,16 @@ kosmos info
 - **CLI Layer**: Terminal UI with Rich and Typer for interactive research
 - **Research Director**: Master orchestrator managing research workflow
 - **Literature Analyzer**: Searches and analyzes scientific papers (arXiv, Semantic Scholar, PubMed)
-- **Hypothesis Generator**: Uses Claude to generate testable hypotheses
+- **Hypothesis Generator**: Uses configured LLM to generate testable hypotheses
 - **Experiment Designer**: Designs computational experiments
 - **Execution Engine**: Runs experiments using proven statistical methods
-- **Data Analyst**: Interprets results using Claude
+- **Data Analyst**: Interprets results using configured LLM
 - **Cache Manager**: Multi-tier caching system for cost optimization
 - **Feedback Loop**: Iteratively refines hypotheses based on results
 
-## Usage Modes
+## Anthropic Usage Modes
+
+*For setup instructions for OpenAI, Ollama, OpenRouter, and LM Studio, see [Provider Setup Guide](docs/providers/README.md)*
 
 ### Mode 1: Claude Code CLI (Max Subscription)
 
@@ -499,9 +509,25 @@ pip install -e ".[router]"
 
 All configuration is via environment variables (see `.env.example`):
 
-### Core Settings
+### LLM Provider Settings
+- `LLM_PROVIDER`: Provider to use (`anthropic` or `openai`, default: `anthropic`)
+
+### Anthropic Settings (when LLM_PROVIDER=anthropic)
 - `ANTHROPIC_API_KEY`: API key or `999...` for CLI mode
-- `CLAUDE_MODEL`: Model to use (API mode only)
+- `CLAUDE_MODEL`: Model to use (default: `claude-3-5-sonnet-20241022`)
+- `CLAUDE_MAX_TOKENS`: Max tokens per request (default: 4096)
+- `CLAUDE_TEMPERATURE`: Sampling temperature 0.0-1.0 (default: 0.7)
+- `CLAUDE_ENABLE_CACHE`: Enable prompt caching (default: true)
+
+### OpenAI Settings (when LLM_PROVIDER=openai)
+- `OPENAI_API_KEY`: OpenAI API key (required)
+- `OPENAI_MODEL`: Model name (default: `gpt-4-turbo`)
+- `OPENAI_MAX_TOKENS`: Max tokens per request (default: 4096)
+- `OPENAI_TEMPERATURE`: Sampling temperature 0.0-2.0 (default: 0.7)
+- `OPENAI_BASE_URL`: Custom base URL for compatible APIs (optional, for Ollama/OpenRouter/LM Studio)
+- `OPENAI_ORGANIZATION`: OpenAI organization ID (optional)
+
+### Core Settings
 - `DATABASE_URL`: Database connection string
 - `LOG_LEVEL`: Logging verbosity
 
@@ -661,7 +687,7 @@ If you use Kosmos in your research, please cite:
 
 ```bibtex
 @software{kosmos_ai_scientist,
-  title={Kosmos AI Scientist: Autonomous Scientific Discovery with Claude},
+  title={Kosmos AI Scientist: Multi-Provider Autonomous Scientific Discovery},
   author={Kosmos Contributors},
   year={2025},
   url={https://github.com/jimmc414/Kosmos}
@@ -670,7 +696,9 @@ If you use Kosmos in your research, please cite:
 
 ## Acknowledgments
 
-- **Anthropic** for Claude and Claude Code
+- **Anthropic** for Claude and Claude Code CLI
+- **OpenAI** for GPT models and API
+- **Ollama** for local model infrastructure
 - **Edison Scientific** for kosmos-figures analysis patterns
 - **Open science community** for literature APIs and tools
 
@@ -681,12 +709,14 @@ If you use Kosmos in your research, please cite:
 
 ---
 
-**Status**: Phase 10 - Optimization & Production (49% complete, 17/35 tasks done)
+**Status**: v0.2.0 - Multi-Provider Support Released
 
-**Completed**:
-- Core infrastructure (Phases 1-9)
-- Cache system with 30%+ cost savings (Week 1)
-- CLI interface with Rich (Week 2)
-- Documentation and deployment (Week 3 - in progress)
+**Recent Updates**:
+- Multi-provider LLM support (Anthropic, OpenAI, Ollama, OpenRouter, LM Studio)
+- Provider abstraction layer with unified API
+- Comprehensive provider documentation and migration guides
+- Configuration-driven provider switching
+- Performance optimization (20-40× faster)
+- Production deployment features
 
-**Last Updated**: 2025-01-15
+**Last Updated**: 2025-11-13
