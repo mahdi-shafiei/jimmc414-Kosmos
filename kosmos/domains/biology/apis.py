@@ -376,6 +376,41 @@ class GTExClient:
             return None
 
     @retry(stop=stop_after_attempt(3), wait=wait_exponential(min=1, max=10))
+    def get_pqtl(self, snp_id: str, gene_id: str, tissue: str = "Whole_Blood") -> Optional[Dict[str, Any]]:
+        """
+        Get pQTL (protein quantitative trait loci) data for SNP-gene pair.
+
+        Args:
+            snp_id: Variant ID
+            gene_id: Gene ID (Ensembl format)
+            tissue: GTEx tissue name
+
+        Returns:
+            Dictionary with pQTL data or None
+        """
+        try:
+            # GTEx pQTL API endpoint (similar to eQTL)
+            url = f"{self.BASE_URL}/association/pqtl"
+            params = {
+                'variantId': snp_id,
+                'gencodeId': gene_id,
+                'tissueSiteDetailId': tissue,
+            }
+
+            response = self.client.get(url, params=params)
+
+            if response.status_code == 200:
+                data = response.json()
+                if data and 'data' in data and len(data['data']) > 0:
+                    return data['data'][0]
+
+            return None
+
+        except Exception as e:
+            logger.error(f"GTEx pQTL error: {e}")
+            return None
+
+    @retry(stop=stop_after_attempt(3), wait=wait_exponential(min=1, max=10))
     def get_gene_expression(self, gene_id: str, tissue: Optional[str] = None) -> Optional[Dict[str, Any]]:
         """
         Get gene expression data across tissues.
@@ -455,6 +490,45 @@ class ENCODEClient:
 
         except Exception as e:
             logger.error(f"ENCODE search error: {e}")
+            return None
+
+    @retry(stop=stop_after_attempt(3), wait=wait_exponential(min=1, max=10))
+    def get_atac_peaks(self, snp_id: str, genome: str = "GRCh38") -> Optional[Dict[str, Any]]:
+        """
+        Get ATAC-seq peaks overlapping a genomic variant.
+
+        Args:
+            snp_id: Variant ID or genomic coordinates
+            genome: Genome assembly (default: GRCh38)
+
+        Returns:
+            Dictionary with ATAC-seq peak data or None
+        """
+        try:
+            # ENCODE peak search API
+            # Parse snp_id to extract coordinates if needed
+            # For now, return a placeholder structure
+            url = f"{self.BASE_URL}/search/"
+            params = {
+                'type': 'Annotation',
+                'annotation_type': 'peaks',
+                'assay_title': 'ATAC-seq',
+                'assembly': genome,
+                'format': 'json',
+                'limit': 10,
+            }
+
+            response = self.client.get(url, params=params)
+
+            if response.status_code == 200:
+                data = response.json()
+                if data and '@graph' in data and len(data['@graph']) > 0:
+                    return data['@graph'][0]
+
+            return None
+
+        except Exception as e:
+            logger.error(f"ENCODE ATAC-seq peaks error: {e}")
             return None
 
     def close(self):

@@ -214,11 +214,16 @@ def configure_research_parameters() -> Dict[str, Any]:
     # Max iterations
     console.print("[cyan]Maximum research iterations:[/cyan]")
     console.print("[muted](How many hypothesis-experiment cycles to run)[/muted]")
-    params["max_iterations"] = IntPrompt.ask(
+    max_iterations = IntPrompt.ask(
         "Iterations",
         default=10,
         show_default=True,
     )
+    # Validate bounds
+    if max_iterations < 1 or max_iterations > 1000:
+        console.print("[error]Error: max_iterations must be between 1 and 1000[/error]")
+        raise ValueError("max_iterations must be between 1 and 1000")
+    params["max_iterations"] = max_iterations
     console.print()
 
     # Experiment budget

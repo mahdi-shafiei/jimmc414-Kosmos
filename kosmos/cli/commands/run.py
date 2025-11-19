@@ -243,20 +243,21 @@ def run_with_progress(director, question: str, max_iterations: int) -> dict:
                 progress.update(iteration_task, completed=iteration + 1)
 
                 # Update phase-specific progress based on workflow state
-                workflow_state = status.get("workflow_state", "INITIALIZING")
+                from kosmos.core.workflow import WorkflowState
+                workflow_state = status.get("workflow_state", WorkflowState.INITIALIZING.value)
 
-                if workflow_state == "GENERATING_HYPOTHESES":
+                if workflow_state == WorkflowState.GENERATING_HYPOTHESES.value:
                     progress.update(hypothesis_task, completed=50)
-                elif workflow_state == "DESIGNING_EXPERIMENTS":
+                elif workflow_state == WorkflowState.DESIGNING_EXPERIMENTS.value:
                     progress.update(hypothesis_task, completed=100)
                     progress.update(experiment_task, completed=50)
-                elif workflow_state == "EXECUTING_EXPERIMENTS":
+                elif workflow_state == WorkflowState.EXECUTING.value:
                     progress.update(experiment_task, completed=100)
                     progress.update(execution_task, completed=50)
-                elif workflow_state == "ANALYZING_RESULTS":
+                elif workflow_state == WorkflowState.ANALYZING.value:
                     progress.update(execution_task, completed=100)
                     progress.update(analysis_task, completed=50)
-                elif workflow_state in ["REFINING_HYPOTHESES", "CHECKING_CONVERGENCE"]:
+                elif workflow_state in [WorkflowState.REFINING.value, WorkflowState.CONVERGED.value]:
                     progress.update(analysis_task, completed=100)
 
                 # Check for convergence

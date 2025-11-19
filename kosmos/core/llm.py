@@ -617,8 +617,17 @@ def get_client(reset: bool = False, use_provider_system: bool = True) -> Union[C
                 logger.info(f"Initialized {config.llm_provider} provider via config")
 
             except Exception as e:
-                logger.warning(f"Failed to initialize provider from config: {e}. Falling back to ClaudeClient")
-                _default_client = ClaudeClient()
+                logger.warning(f"Failed to initialize provider from config: {e}. Falling back to AnthropicProvider")
+                # Fallback to AnthropicProvider instance (LLMProvider-compatible)
+                from kosmos.core.providers.anthropic import AnthropicProvider
+                fallback_config = {
+                    'api_key': os.environ.get('ANTHROPIC_API_KEY'),
+                    'model': 'claude-3-5-sonnet-20241022',
+                    'max_tokens': 4096,
+                    'temperature': 0.7,
+                    'enable_cache': True,
+                }
+                _default_client = AnthropicProvider(fallback_config)
         else:
             # Legacy mode: use ClaudeClient directly
             _default_client = ClaudeClient()

@@ -678,11 +678,12 @@ class PerovskiteDBClient:
                     if col in df.columns:
                         fabrication[col] = row[col]
 
-            # Extract performance metrics
-            jsc = row.get(jsc_col) if jsc_col in df.columns else None
-            voc = row.get(voc_col) if voc_col in df.columns else None
-            ff = row.get(ff_col) if ff_col in df.columns else None
-            eff = row.get(eff_col) if eff_col in df.columns else None
+            # Extract performance metrics (convert Series to dict for .get() method)
+            row_dict = row.to_dict()
+            jsc = row_dict.get(jsc_col) if jsc_col in df.columns else None
+            voc = row_dict.get(voc_col) if voc_col in df.columns else None
+            ff = row_dict.get(ff_col) if ff_col in df.columns else None
+            eff = row_dict.get(eff_col) if eff_col in df.columns else None
 
             experiments.append(PerovskiteExperiment(
                 experiment_id=str(idx),

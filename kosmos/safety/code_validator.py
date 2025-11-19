@@ -239,16 +239,39 @@ class CodeValidator:
         return violations
 
     def _check_dangerous_imports(self, code: str) -> List[SafetyViolation]:
-        """Check for dangerous module imports."""
+        """Check for dangerous module imports using AST parsing."""
         violations = []
-        for module in self.DANGEROUS_MODULES:
-            if f"import {module}" in code or f"from {module}" in code:
-                violations.append(SafetyViolation(
-                    type=ViolationType.DANGEROUS_CODE,
-                    severity=RiskLevel.CRITICAL,
-                    message=f"Dangerous import detected: {module}",
-                    details={"module": module}
-                ))
+        try:
+            import ast
+            tree = ast.parse(code)
+            for node in ast.walk(tree):
+                if isinstance(node, ast.Import):
+                    for alias in node.names:
+                        if alias.name in self.DANGEROUS_MODULES or any(alias.name.startswith(f"{m}.") for m in self.DANGEROUS_MODULES):
+                            violations.append(SafetyViolation(
+                                type=ViolationType.DANGEROUS_CODE,
+                                severity=RiskLevel.CRITICAL,
+                                message=f"Dangerous import detected: {alias.name}",
+                                details={"module": alias.name}
+                            ))
+                elif isinstance(node, ast.ImportFrom):
+                    if node.module and (node.module in self.DANGEROUS_MODULES or any(node.module.startswith(f"{m}.") for m in self.DANGEROUS_MODULES)):
+                        violations.append(SafetyViolation(
+                            type=ViolationType.DANGEROUS_CODE,
+                            severity=RiskLevel.CRITICAL,
+                            message=f"Dangerous import detected: from {node.module}",
+                            details={"module": node.module}
+                        ))
+        except SyntaxError:
+            # Fall back to string matching if code has syntax errors
+            for module in self.DANGEROUS_MODULES:
+                if f"import {module}" in code or f"from {module}" in code:
+                    violations.append(SafetyViolation(
+                        type=ViolationType.DANGEROUS_CODE,
+                        severity=RiskLevel.CRITICAL,
+                        message=f"Dangerous import detected: {module}",
+                        details={"module": module}
+                    ))
         return violations
 
     def _check_dangerous_patterns(self, code: str) -> tuple:

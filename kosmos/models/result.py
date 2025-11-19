@@ -83,6 +83,9 @@ class StatisticalTestResult(BaseModel):
     significant_0_001: bool = Field(..., description="Significant at α=0.001")
     significance_label: str = Field(..., description="Significance label (**, *, ns)")
 
+    # Primary test designation
+    is_primary: bool = Field(default=False, description="Whether this is the primary test")
+
     # Sample information
     sample_size: Optional[int] = Field(None, ge=0, description="Total sample size")
     degrees_of_freedom: Optional[int] = Field(None, description="Degrees of freedom")
@@ -164,6 +167,8 @@ class ExperimentResult(BaseModel):
     # Key results
     primary_p_value: Optional[float] = Field(None, ge=0, le=1, description="Primary p-value")
     primary_effect_size: Optional[float] = Field(None, description="Primary effect size")
+    primary_ci_lower: Optional[float] = Field(None, description="Primary confidence interval lower bound")
+    primary_ci_upper: Optional[float] = Field(None, description="Primary confidence interval upper bound")
     supports_hypothesis: Optional[bool] = Field(
         None,
         description="Whether results support the hypothesis"
@@ -211,7 +216,11 @@ class ExperimentResult(BaseModel):
     def validate_primary_test(cls, v: Optional[str], info) -> Optional[str]:
         """Validate primary test exists in statistical_tests."""
         if v is not None and 'statistical_tests' in info.data:
-            test_names = [test.test_name for test in info.data['statistical_tests']]
+            # In Pydantic V2, info.data contains raw dicts, not model instances
+            test_names = [
+                test['test_name'] if isinstance(test, dict) else test.test_name
+                for test in info.data['statistical_tests']
+            ]
             if v not in test_names:
                 raise ValueError(f"Primary test '{v}' not found in statistical_tests")
         return v

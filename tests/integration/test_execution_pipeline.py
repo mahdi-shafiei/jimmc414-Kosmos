@@ -33,7 +33,7 @@ def ttest_protocol():
         experiment_type=ExperimentType.DATA_ANALYSIS,
         statistical_tests=[
             StatisticalTestSpec(
-                test_type="t_test",
+                test_type=StatisticalTest.T_TEST,
                 variables=["group", "score"],
                 description="Two-sample T-test comparing treatment vs control groups",
                 null_hypothesis="There is no difference in mean scores between groups"

@@ -103,7 +103,7 @@ def sample_experiment_result():
             random_seed=42
         ),
         raw_data={"mean_diff": 1.7},
-        plots_generated=[],
+        generated_files=[],
         version=1,
         created_at=datetime.utcnow()
     )
