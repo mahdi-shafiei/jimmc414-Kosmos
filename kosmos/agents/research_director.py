@@ -907,7 +907,7 @@ class ResearchDirectorAgent(BaseAgent):
         """Send request to ConvergenceDetector to check if research is complete."""
         # Use model_dump() for Pydantic v2, fall back to dict() for v1
         try:
-            research_plan_dict = self.model_to_dict(research_plan)
+            research_plan_dict = model_to_dict(self.research_plan)
         except AttributeError:
             research_plan_dict = self.research_plan.dict()
 

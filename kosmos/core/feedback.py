@@ -285,7 +285,7 @@ class FeedbackLoop:
             },
             experiment_design={
                 "test_type": result.primary_test,
-                "sample_size": result.model_to_dict(metadata) if hasattr(result, 'metadata') else {}
+                "sample_size": model_to_dict(result.metadata) if hasattr(result, 'metadata') else {}
             },
             statistical_approach={
                 "p_value": result.primary_p_value,

@@ -64,7 +64,7 @@ class ExecutionResult:
         # Include profile data if available
         if self.profile_result:
             try:
-                result['profile_data'] = self.model_to_dict(profile_result)
+                result['profile_data'] = model_to_dict(self.profile_result)
             except Exception:
                 result['profile_data'] = None
 
