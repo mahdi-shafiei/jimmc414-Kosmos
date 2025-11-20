@@ -9,7 +9,9 @@
 
 ## ✅ Completed Tests
 
-### Test 1: Biology Research Workflow
+### Phase 1: Critical Sanity Tests
+
+### Test 1: Biology Research Workflow (Enhanced)
 - **Status:** ✅ PASSED (21.95s)
 - **Question:** "How does temperature affect enzyme activity in metabolic pathways?"
 - **Result:** Successfully generated research plan and initialized workflow
@@ -266,3 +268,12 @@ Before starting next E2E testing session:
   - Re-ran full suite: 9 passed, 0 skipped (20.73s)
   - Confirmed Docker v29.0.1 and Docker Compose v2.40.3 available and functional
   - Updated budget tracker (~$0.32-0.45 total spent)
+
+- **2025-11-20 (Paper-Driven Sanity Testing):** Researched Kosmos paper and implemented critical sanity tests
+  - Researched paper vision: autonomous research loop with 7 phases
+  - Enhanced biology workflow test with hypothesis verification
+  - Enhanced neuroscience workflow test with full execution logic
+  - Created TestPaperValidation class with 3 new E2E tests
+  - Results: 2 tests passing (biology, neuroscience), 1 test needs debugging (multi-iteration)
+  - Findings: Workflow initializes correctly but hypothesis generation async behavior needs investigation
+  - Total spend: ~$0.52-0.70 (including research and test runs)
