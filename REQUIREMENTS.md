@@ -1,6 +1,6 @@
 # Kosmos AI Scientist - Requirements Specification
 
-**Version:** 1.0 Draft
+**Version:** 1.1 Draft
 **Date:** 2025-11-20
 **Status:** In Review
 **Purpose:** Production readiness validation for Kosmos AI Scientist open-source implementation
@@ -62,7 +62,15 @@ This specification uses RFC 2119 key words to indicate requirement levels:
 
 **REQ-LLM-007:** The system SHOULD implement prompt caching to reduce API costs for repeated operations.
 
-**REQ-LLM-008:** The system MUST NOT expose LLM API keys in logs, error messages, or output artifacts.
+**REQ-LLM-008:** 🚫 The system MUST NOT expose LLM API keys in logs, error messages, or output artifacts.
+
+**REQ-LLM-009:** 🚫 The system MUST NOT send raw sensitive user data to LLM APIs without sanitization or anonymization.
+
+**REQ-LLM-010:** 🚫 The system MUST NOT use LLM responses as ground truth without validation - responses MUST be verified against domain knowledge or data.
+
+**REQ-LLM-011:** 🚫 The system MUST NOT retry failed LLM API calls indefinitely - a maximum retry limit MUST be enforced.
+
+**REQ-LLM-012:** 🚫 The system MUST NOT expose internal system prompts, reasoning chains, or prompt engineering techniques in user-facing outputs.
 
 ---
 
@@ -108,7 +116,11 @@ This specification uses RFC 2119 key words to indicate requirement levels:
 
 **REQ-DAA-GEN-004:** The generated code SHOULD include comments explaining key analytical steps.
 
-**REQ-DAA-GEN-005:** The Data Analysis Agent MUST NOT generate code containing hard-coded credentials, absolute file paths, or non-portable system calls.
+**REQ-DAA-GEN-005:** 🚫 The Data Analysis Agent MUST NOT generate code containing hard-coded credentials, absolute file paths, or non-portable system calls.
+
+**REQ-DAA-GEN-006:** 🚫 The system MUST NOT execute code that uses `eval()` or `exec()` on untrusted input or user-provided strings.
+
+**REQ-DAA-GEN-007:** 🚫 The Data Analysis Agent MUST NOT generate code that modifies global state or environment variables that could affect other components.
 
 ---
 
@@ -129,6 +141,12 @@ This specification uses RFC 2119 key words to indicate requirement levels:
 **REQ-DAA-EXEC-007:** The sandbox MUST provide read-only access to the input dataset without allowing modification.
 
 **REQ-DAA-EXEC-008:** The system MAY support both containerized (Docker) and direct execution modes for testing and development.
+
+**REQ-DAA-EXEC-009:** 🚫 The sandbox MUST NOT allow code to spawn subprocesses or execute shell commands.
+
+**REQ-DAA-EXEC-010:** 🚫 The sandbox MUST NOT allow code to modify system environment variables visible to other processes.
+
+**REQ-DAA-EXEC-011:** 🚫 The system MUST NOT proceed with code execution if the sandbox initialization fails or is unavailable (when sandboxing is required).
 
 ---
 
@@ -172,9 +190,13 @@ This specification uses RFC 2119 key words to indicate requirement levels:
 
 **REQ-DAA-SAFE-003:** The system MUST block execution of code containing prohibited operations and log the violation.
 
-**REQ-DAA-SAFE-004:** The system MUST NOT execute code that attempts to import unauthorized modules (e.g., `os.system`, `subprocess`, `socket`).
+**REQ-DAA-SAFE-004:** 🚫 The system MUST NOT execute code that attempts to import unauthorized modules (e.g., `os.system`, `subprocess`, `socket`).
 
 **REQ-DAA-SAFE-005:** The safety validator MUST provide detailed violation reports indicating the specific prohibited operation and its location in the code.
+
+**REQ-DAA-SAFE-006:** 🚫 The system MUST NOT allow code to access or modify files outside the designated data and output directories.
+
+**REQ-DAA-SAFE-007:** 🚫 The system MUST NOT execute code containing infinite loops or recursion without depth limits (detected via static analysis where possible).
 
 ---
 
@@ -197,6 +219,12 @@ This specification uses RFC 2119 key words to indicate requirement levels:
 **REQ-LSA-008:** The system MAY implement local caching of retrieved literature to reduce API calls and costs.
 
 **REQ-LSA-009:** The system MUST handle literature API failures gracefully and continue the workflow with available information.
+
+**REQ-LSA-010:** 🚫 The Literature Search Agent MUST NOT cite retracted papers or papers flagged for scientific misconduct.
+
+**REQ-LSA-011:** 🚫 The system MUST NOT rely solely on non-peer-reviewed sources (preprints, blog posts) as primary evidence for scientific claims.
+
+**REQ-LSA-012:** 🚫 The Literature Search Agent MUST NOT synthesize contradictory findings without explicitly noting the conflict and uncertainty.
 
 ---
 
@@ -225,6 +253,10 @@ This specification uses RFC 2119 key words to indicate requirement levels:
 **REQ-WM-CRUD-004:** The World Model SHOULD support deleting entities (with confirmation for safety).
 
 **REQ-WM-CRUD-005:** All CRUD operations MUST maintain ACID properties (Atomicity, Consistency, Isolation, Durability) when using transactional storage.
+
+**REQ-WM-CRUD-006:** 🚫 The World Model MUST NOT allow deletion of entities that have active references from other entities without cascading or explicit conflict resolution.
+
+**REQ-WM-CRUD-007:** 🚫 The system MUST NOT accept updates that would break referential integrity between entities.
 
 ---
 
@@ -261,6 +293,10 @@ This specification uses RFC 2119 key words to indicate requirement levels:
 **REQ-WM-PERSIST-003:** The system MUST support exporting the complete World Model in a portable format (JSON, SQL dump).
 
 **REQ-WM-PERSIST-004:** The system MUST support importing a previously exported World Model to resume or replicate research.
+
+**REQ-WM-PERSIST-005:** 🚫 The system MUST NOT allow retroactive modification of provenance records or historical entity states.
+
+**REQ-WM-PERSIST-006:** 🚫 The World Model MUST NOT merge conflicting information from different sources without explicit conflict resolution and documentation.
 
 ---
 
@@ -308,6 +344,10 @@ This specification uses RFC 2119 key words to indicate requirement levels:
 
 **REQ-ORCH-ITER-005:** The Orchestrator MUST log the reason for workflow termination (convergence, iteration limit, error, manual stop).
 
+**REQ-ORCH-ITER-006:** 🚫 The Orchestrator MUST NOT allow infinite iteration loops - a hard maximum iteration limit MUST be enforced.
+
+**REQ-ORCH-ITER-007:** 🚫 The Orchestrator MUST NOT proceed to the next iteration if the World Model state is inconsistent or corrupted.
+
 ---
 
 ### 5.4 Error Handling and Recovery
@@ -320,7 +360,11 @@ This specification uses RFC 2119 key words to indicate requirement levels:
 
 **REQ-ORCH-ERR-004:** The Orchestrator MAY implement adaptive strategies when repeated failures occur (e.g., simplify task, try alternative approach).
 
-**REQ-ORCH-ERR-005:** The Orchestrator MUST NOT retry tasks that fail due to safety violations.
+**REQ-ORCH-ERR-005:** 🚫 The Orchestrator MUST NOT retry tasks that fail due to safety violations.
+
+**REQ-ORCH-ERR-006:** 🚫 The Orchestrator MUST NOT ignore critical errors - only transient failures (network timeouts, rate limits) MAY be retried.
+
+**REQ-ORCH-ERR-007:** 🚫 The system MUST NOT execute contradictory or mutually exclusive tasks simultaneously.
 
 ---
 
@@ -436,6 +480,14 @@ This specification uses RFC 2119 key words to indicate requirement levels:
 
 **REQ-DATA-005:** The system MUST handle missing or malformed data gracefully without crashing.
 
+**REQ-DATA-006:** 🚫 The system MUST NOT modify or overwrite original input datasets - all transformations MUST create new derived datasets.
+
+**REQ-DATA-007:** 🚫 The system MUST NOT proceed with analysis if data quality checks reveal critical issues (>50% missing values, schema mismatches, data type inconsistencies).
+
+**REQ-DATA-008:** 🚫 The system MUST NOT mix data from different research domains or experiments without explicit user instruction and clear provenance tracking.
+
+**REQ-DATA-009:** 🚫 The system MUST NOT accept datasets without clear provenance information (source, collection date, data dictionary).
+
 ---
 
 ## 9. Performance and Scalability Requirements
@@ -470,6 +522,12 @@ This specification uses RFC 2119 key words to indicate requirement levels:
 
 **REQ-PERF-RES-003:** The system MUST operate within configured memory limits (default: 8GB RAM per agent).
 
+**REQ-PERF-RES-004:** 🚫 The system MUST NOT block the entire workflow waiting for slow external API calls - timeouts MUST be enforced.
+
+**REQ-PERF-RES-005:** 🚫 The system MUST NOT load entire large datasets (>1GB) into memory if streaming or chunked processing is feasible.
+
+**REQ-PERF-RES-006:** 🚫 The system MUST NOT execute analyses with exponential time complexity (O(2^n) or worse) on datasets with n > 1000 elements without user confirmation.
+
 ---
 
 ## 10. Scientific Validity Requirements
@@ -484,6 +542,10 @@ This specification uses RFC 2119 key words to indicate requirement levels:
 
 **REQ-SCI-HYP-004:** Hypotheses MUST include clear rationale explaining the scientific reasoning.
 
+**REQ-SCI-HYP-005:** 🚫 The system MUST NOT generate hypotheses that contradict established physical laws or well-validated scientific principles without explicit justification.
+
+**REQ-SCI-HYP-006:** 🚫 The system MUST NOT claim causation from correlation without experimental design that controls for confounding variables.
+
 ---
 
 ### 10.2 Analysis Validity
@@ -495,6 +557,12 @@ This specification uses RFC 2119 key words to indicate requirement levels:
 **REQ-SCI-ANA-003:** The system SHOULD report effect sizes alongside p-values for all statistical tests.
 
 **REQ-SCI-ANA-004:** The system MUST flag analyses that violate assumptions and suggest alternative approaches.
+
+**REQ-SCI-ANA-005:** 🚫 The system MUST NOT perform statistical tests on data that grossly violates test assumptions (e.g., t-test on heavily skewed non-normal data with small n).
+
+**REQ-SCI-ANA-006:** 🚫 The system MUST NOT report p-values without accompanying effect sizes and confidence intervals.
+
+**REQ-SCI-ANA-007:** 🚫 The system MUST NOT cherry-pick analyses or report only statistically significant results - all performed analyses MUST be documented.
 
 ---
 
@@ -554,6 +622,10 @@ This specification uses RFC 2119 key words to indicate requirement levels:
 
 **REQ-SEC-API-003:** The system SHOULD validate all external API responses for malicious content before processing.
 
+**REQ-SEC-API-004:** 🚫 The system MUST NOT send user data or research data to external APIs without explicit user consent and disclosure.
+
+**REQ-SEC-API-005:** 🚫 The system MUST NOT cache sensitive API responses (containing credentials, personal data) in plaintext.
+
 ---
 
 ## 12. Testing and Validation Requirements
@@ -604,28 +676,32 @@ This specification uses RFC 2119 key words to indicate requirement levels:
 
 ## Requirements Summary
 
-### Total Requirements: 203
+### Total Requirements: 244
 
 **By Priority Level:**
-- MUST/SHALL (Critical): 161 requirements (79.3%)
-- SHOULD (Recommended): 36 requirements (17.7%)
-- MAY (Optional): 6 requirements (3.0%)
+- MUST/SHALL (Critical): 200 requirements (82.0%)
+- SHOULD (Recommended): 38 requirements (15.6%)
+- MAY (Optional): 6 requirements (2.5%)
+
+**By Requirement Type:**
+- Positive Requirements (MUST DO): 194 requirements (79.5%)
+- Negative Requirements (MUST NOT): 50 requirements (20.5%)
 
 **By Category:**
-- Core Infrastructure: 25 requirements (12.3%)
-- Data Analysis Agent: 30 requirements (14.8%)
-- Literature Search Agent: 9 requirements (4.4%)
-- Structured World Model: 20 requirements (9.9%)
-- Orchestrator: 25 requirements (12.3%)
-- Integration and Coordination: 12 requirements (5.9%)
-- Output and Traceability: 15 requirements (7.4%)
-- Domain and Data: 10 requirements (4.9%)
-- Performance and Scalability: 12 requirements (5.9%)
-- Scientific Validity: 14 requirements (6.9%)
-- Security and Safety: 13 requirements (6.4%)
-- Testing and Validation: 9 requirements (4.4%)
-- Documentation: 5 requirements (2.5%)
-- Meta-Requirements: 3 requirements (1.5%)
+- Core Infrastructure: 33 requirements (13.5%)
+- Data Analysis Agent: 41 requirements (16.8%)
+- Literature Search Agent: 12 requirements (4.9%)
+- Structured World Model: 24 requirements (9.8%)
+- Orchestrator: 32 requirements (13.1%)
+- Integration and Coordination: 12 requirements (4.9%)
+- Output and Traceability: 15 requirements (6.1%)
+- Domain and Data: 14 requirements (5.7%)
+- Performance and Scalability: 15 requirements (6.1%)
+- Scientific Validity: 19 requirements (7.8%)
+- Security and Safety: 15 requirements (6.1%)
+- Testing and Validation: 9 requirements (3.7%)
+- Documentation: 5 requirements (2.0%)
+- Meta-Requirements: 3 requirements (1.2%)
 
 ---
 
@@ -684,11 +760,110 @@ The system SHALL be considered production-ready when:
 
 ---
 
+## Appendix A: Negative Requirements Index
+
+This appendix provides a quick reference to all negative requirements (MUST NOT / SHALL NOT) for security reviews, code reviews, and deployment checklists.
+
+### Critical Safety Requirements (Code Execution)
+
+**REQ-DAA-GEN-005:** 🚫 No hard-coded credentials, absolute paths, or non-portable system calls in generated code
+**REQ-DAA-GEN-006:** 🚫 No `eval()` or `exec()` on untrusted input
+**REQ-DAA-GEN-007:** 🚫 No modification of global state or environment variables
+**REQ-DAA-EXEC-009:** 🚫 No subprocess spawning or shell command execution in sandbox
+**REQ-DAA-EXEC-010:** 🚫 No modification of system environment variables
+**REQ-DAA-EXEC-011:** 🚫 No execution if sandbox initialization fails
+**REQ-DAA-SAFE-004:** 🚫 No execution of code importing unauthorized modules (os.system, subprocess, socket)
+**REQ-DAA-SAFE-006:** 🚫 No file access outside designated data and output directories
+**REQ-DAA-SAFE-007:** 🚫 No infinite loops or unbounded recursion
+
+### Security & Data Protection
+
+**REQ-LLM-008:** 🚫 No exposure of LLM API keys in logs or outputs
+**REQ-LLM-009:** 🚫 No sending raw sensitive data to LLMs without sanitization
+**REQ-LLM-010:** 🚫 No using LLM responses as ground truth without validation
+**REQ-LLM-011:** 🚫 No infinite LLM retry loops
+**REQ-LLM-012:** 🚫 No exposure of internal prompts in user outputs
+**REQ-SEC-EXEC-001:** 🚫 No host file system access (except designated directories)
+**REQ-SEC-EXEC-002:** 🚫 No network access from generated code
+**REQ-SEC-EXEC-003:** 🚫 No arbitrary system command execution
+**REQ-SEC-DATA-001:** 🚫 No sensitive data in logs or outputs
+**REQ-SEC-API-004:** 🚫 No sending user data to external APIs without consent
+**REQ-SEC-API-005:** 🚫 No caching sensitive API responses in plaintext
+
+### Scientific Validity & Integrity
+
+**REQ-LSA-010:** 🚫 No citing retracted papers
+**REQ-LSA-011:** 🚫 No relying solely on non-peer-reviewed sources for primary evidence
+**REQ-LSA-012:** 🚫 No synthesizing contradictory findings without noting conflicts
+**REQ-SCI-HYP-005:** 🚫 No hypotheses contradicting established physical laws without justification
+**REQ-SCI-HYP-006:** 🚫 No claiming causation from correlation without proper design
+**REQ-SCI-ANA-005:** 🚫 No statistical tests on data grossly violating assumptions
+**REQ-SCI-ANA-006:** 🚫 No p-values without effect sizes and confidence intervals
+**REQ-SCI-ANA-007:** 🚫 No cherry-picking or selective reporting of analyses
+**REQ-SCI-VAL-003:** 🚫 No demonstrably false conclusions
+
+### Data Integrity
+
+**REQ-DATA-006:** 🚫 No modification of original input datasets
+**REQ-DATA-007:** 🚫 No proceeding with critical data quality issues (>50% missing, schema mismatches)
+**REQ-DATA-008:** 🚫 No mixing data from different domains without explicit instruction
+**REQ-DATA-009:** 🚫 No accepting datasets without provenance information
+**REQ-DOMAIN-002:** 🚫 No domain-specific code modifications required
+
+### World Model Integrity
+
+**REQ-WM-CRUD-006:** 🚫 No deleting entities with active references without resolution
+**REQ-WM-CRUD-007:** 🚫 No updates breaking referential integrity
+**REQ-WM-PERSIST-005:** 🚫 No retroactive modification of provenance records
+**REQ-WM-PERSIST-006:** 🚫 No merging conflicting information without resolution
+
+### Orchestrator Safety
+
+**REQ-ORCH-ITER-006:** 🚫 No infinite iteration loops - hard limit enforced
+**REQ-ORCH-ITER-007:** 🚫 No proceeding with inconsistent World Model state
+**REQ-ORCH-ERR-005:** 🚫 No retrying tasks that fail safety validation
+**REQ-ORCH-ERR-006:** 🚫 No ignoring critical errors
+**REQ-ORCH-ERR-007:** 🚫 No executing contradictory tasks simultaneously
+**REQ-INT-PAR-002:** 🚫 No data corruption from parallel execution
+
+### Configuration & Deployment
+
+**REQ-CFG-005:** 🚫 No execution with invalid/missing critical configuration
+**REQ-TEST-CI-002:** 🚫 No production deployment if critical tests fail
+
+### Performance Boundaries
+
+**REQ-PERF-RES-004:** 🚫 No blocking workflow on slow APIs without timeouts
+**REQ-PERF-RES-005:** 🚫 No loading entire large datasets (>1GB) into memory if streaming possible
+**REQ-PERF-RES-006:** 🚫 No exponential complexity algorithms on large datasets (n>1000) without confirmation
+
+---
+
+### Using This Index
+
+**For Code Reviews:**
+1. Check all code changes against relevant negative requirements
+2. Verify AST-based static analysis catches prohibited operations
+3. Ensure test coverage for negative requirements
+
+**For Security Audits:**
+1. Validate all 🚫 requirements in Security & Data Protection section
+2. Test sandbox isolation (REQ-DAA-EXEC-*, REQ-SEC-EXEC-*)
+3. Verify no sensitive data leakage (REQ-SEC-DATA-*, REQ-LLM-008/009)
+
+**For Deployment:**
+1. Confirm all configuration negative requirements (REQ-CFG-005)
+2. Validate all tests pass (REQ-TEST-CI-002)
+3. Review data handling requirements (REQ-DATA-006 through REQ-DATA-009)
+
+---
+
 ## Document Revision History
 
 | Version | Date | Author | Changes |
 |---------|------|--------|---------|
 | 1.0 Draft | 2025-11-20 | Initial | Complete requirements specification for review |
+| 1.1 Draft | 2025-11-20 | Updated | Added 41 negative requirements (MUST NOT) across all categories; Added Appendix A: Negative Requirements Index; Updated statistics (203→244 total requirements) |
 
 ---
 

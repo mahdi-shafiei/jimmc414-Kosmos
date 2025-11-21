@@ -17,7 +17,7 @@ Rewrites a document in a technical, matter-of-fact style suitable for Hacker New
 
 **Usage:**
 ```bash
-/hn-rewrite E2E_TESTING_PLAN.md
+/hn-rewrite INITIAL_E2E_PLAN.md
 /hn-rewrite README.md
 /hn-rewrite docs/getting-started.md
 ```

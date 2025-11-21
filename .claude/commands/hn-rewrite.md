@@ -1,4 +1,8 @@
-Read the file `{{arg1}}` and rewrite it in a technical, matter-of-fact style suitable for a discerning Hacker News audience.
+Read {{arg1}} (either a file path or GitHub issue URL) and rewrite it in a technical, matter-of-fact style suitable for a discerning Hacker News audience.
+
+**Input Detection:**
+- If {{arg1}} starts with `http://` or `https://` - fetch the URL content first using WebFetch
+- Otherwise, treat {{arg1}} as a file path and read the file
 
 Apply these transformations:
 
@@ -21,4 +25,11 @@ Apply these transformations:
    - Maintain technical accuracy
    - Keep all links and references
 
-Output the rewritten document with the same structure and information, but in a neutral, technical tone that respects the reader's intelligence and avoids hype.
+Output the rewritten content with the same structure and information, but in a neutral, technical tone that respects the reader's intelligence and avoids hype.
+
+**Usage Examples:**
+```
+/hn-rewrite README.md
+/hn-rewrite https://github.com/jimmc414/Kosmos/issues/11
+/hn-rewrite docs/announcement.md
+```

@@ -213,7 +213,7 @@ Core pipeline validated. Known limitations documented for Phase 2.
 - `tests/e2e/test_system_sanity.py` - Comprehensive sanity test suite
 
 **Modified Files:**
-- `E2E_TESTING_PLAN.md` - Updated with Phase 1 results
+- `INITIAL_E2E_PLAN.md` - Updated with Phase 1 results
 - `tests/e2e/test_full_research_workflow.py` - Enhanced biology and neuroscience tests
 
 **Commits:**
