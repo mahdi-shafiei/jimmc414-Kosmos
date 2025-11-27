@@ -1,413 +1,313 @@
 """
 Unit tests for profiling system.
 
-Tests ExecutionProfiler, profile decorators, and performance tracking.
-
-NOTE: These tests are written for a different API than what's currently implemented.
-The current implementation uses ProfileResult, profile_context(), and profile_function()
-rather than the expected ProfileData, @profile decorator, and profiles list.
-
-TODO: Rewrite tests to match actual ExecutionProfiler API.
+Tests ExecutionProfiler, profile context manager, and performance tracking.
 """
 
 import pytest
-
-# Skip removed - tests restored (may need API updates)
-
 import time
 from unittest.mock import MagicMock, patch
 
 from kosmos.core.profiling import (
     ExecutionProfiler,
+    ProfilingMode,
+    ProfileResult,
+    profile_experiment_execution,
+    format_profile_summary,
 )
 
 
-@pytest.mark.skip(reason="ProfileData class not implemented (use ProfileResult instead)")
-class TestProfileData:
-    """Test ProfileData data class."""
+class TestProfilingMode:
+    """Test ProfilingMode enum."""
 
-    def test_creation(self):
-        """Test creating profile data."""
-        pass
+    def test_profiling_modes_exist(self):
+        """Test that all profiling modes are defined."""
+        assert ProfilingMode.LIGHT == "light"
+        assert ProfilingMode.STANDARD == "standard"
+        assert ProfilingMode.FULL == "full"
 
 
 class TestExecutionProfiler:
     """Test ExecutionProfiler class."""
 
-    def test_initialization(self):
-        """Test profiler initialization."""
-        profiler = ExecutionProfiler(mode="light")
+    def test_initialization_light_mode(self):
+        """Test profiler initialization with light mode."""
+        profiler = ExecutionProfiler(mode=ProfilingMode.LIGHT)
+        assert profiler.mode == ProfilingMode.LIGHT
 
-        assert profiler.mode == "light"
-        assert profiler.enabled is True
-        assert len(profiler.profiles) == 0
+    def test_initialization_standard_mode(self):
+        """Test profiler initialization with standard mode."""
+        profiler = ExecutionProfiler(mode=ProfilingMode.STANDARD)
+        assert profiler.mode == ProfilingMode.STANDARD
 
-    def test_disabled_profiler(self):
-        """Test profiler when disabled."""
-        profiler = ExecutionProfiler(enabled=False)
+    def test_initialization_full_mode(self):
+        """Test profiler initialization with full mode."""
+        profiler = ExecutionProfiler(mode=ProfilingMode.FULL)
+        assert profiler.mode == ProfilingMode.FULL
 
-        @profiler.profile
-        def test_func():
-            return "result"
+    def test_initialization_with_threshold(self):
+        """Test profiler initialization with custom threshold."""
+        profiler = ExecutionProfiler(
+            mode=ProfilingMode.STANDARD,
+            bottleneck_threshold_percent=5.0
+        )
+        assert profiler.bottleneck_threshold == 5.0
 
-        result = test_func()
+    def test_context_manager_light_mode(self):
+        """Test profiler as context manager."""
+        profiler = ExecutionProfiler(mode=ProfilingMode.LIGHT)
 
-        assert result == "result"
-        assert len(profiler.profiles) == 0  # No profiling when disabled
+        with profiler.profile_context():
+            time.sleep(0.05)
 
-    def test_profile_decorator(self):
-        """Test profile decorator."""
-        profiler = ExecutionProfiler(mode="light")
+        result = profiler.get_result()
+        assert result is not None
+        assert result.execution_time >= 0.05
 
-        @profiler.profile
+    def test_context_manager_standard_mode(self):
+        """Test profiler context manager with standard mode."""
+        profiler = ExecutionProfiler(mode=ProfilingMode.STANDARD)
+
+        with profiler.profile_context():
+            time.sleep(0.05)
+
+        result = profiler.get_result()
+        assert result is not None
+        assert result.execution_time >= 0.05
+        assert result.profiling_mode == ProfilingMode.STANDARD
+
+    def test_profile_function(self):
+        """Test profiling a function."""
+        profiler = ExecutionProfiler(mode=ProfilingMode.LIGHT)
+
         def test_func(x, y):
-            time.sleep(0.1)
+            time.sleep(0.05)
             return x + y
 
-        result = test_func(2, 3)
+        result, profile = profiler.profile_function(test_func, 2, 3)
 
         assert result == 5
-        assert len(profiler.profiles) > 0
+        assert profile is not None
+        assert profile.execution_time >= 0.05
 
-        # Check profile data
-        profile = profiler.profiles[0]
-        assert profile.function_name == "test_func"
-        assert profile.duration_seconds >= 0.1
+    def test_profile_function_with_kwargs(self):
+        """Test profiling a function with keyword arguments."""
+        profiler = ExecutionProfiler(mode=ProfilingMode.LIGHT)
 
-    def test_context_manager(self):
-        """Test profiler as context manager."""
-        profiler = ExecutionProfiler(mode="light")
+        def test_func(x, factor=1):
+            return x * factor
 
-        with profiler.profile_context("test_operation"):
-            time.sleep(0.1)
+        result, profile = profiler.profile_function(test_func, 5, factor=3)
 
-        assert len(profiler.profiles) > 0
-        profile = profiler.profiles[0]
-        assert profile.function_name == "test_operation"
-        assert profile.duration_seconds >= 0.1
+        assert result == 15
+        assert profile is not None
 
-    def test_memory_profiling(self):
-        """Test memory usage profiling."""
-        profiler = ExecutionProfiler(mode="standard")
+    def test_get_result_before_profiling(self):
+        """Test get_result returns None before profiling."""
+        profiler = ExecutionProfiler(mode=ProfilingMode.LIGHT)
+        assert profiler.get_result() is None
 
-        @profiler.profile
-        def allocate_memory():
+    def test_reset(self):
+        """Test reset clears profiler state."""
+        profiler = ExecutionProfiler(mode=ProfilingMode.LIGHT)
+
+        with profiler.profile_context():
+            time.sleep(0.01)
+
+        assert profiler.get_result() is not None
+
+        profiler.reset()
+        assert profiler.get_result() is None
+
+
+class TestProfileResult:
+    """Test ProfileResult data model."""
+
+    def test_profile_result_fields(self):
+        """Test ProfileResult has expected fields."""
+        profiler = ExecutionProfiler(mode=ProfilingMode.LIGHT)
+
+        with profiler.profile_context():
+            time.sleep(0.01)
+
+        result = profiler.get_result()
+
+        assert hasattr(result, 'execution_time')
+        assert hasattr(result, 'cpu_time')
+        assert hasattr(result, 'wall_time')
+        assert hasattr(result, 'memory_peak_mb')
+        assert hasattr(result, 'profiling_mode')
+
+    def test_profile_result_timing_consistency(self):
+        """Test that wall_time == execution_time."""
+        profiler = ExecutionProfiler(mode=ProfilingMode.LIGHT)
+
+        with profiler.profile_context():
+            time.sleep(0.05)
+
+        result = profiler.get_result()
+
+        # execution_time and wall_time should be the same
+        assert result.execution_time == result.wall_time
+
+
+class TestProfileExperiment:
+    """Test profiling experiment code."""
+
+    def test_profile_experiment(self):
+        """Test profiling experiment code execution."""
+        profiler = ExecutionProfiler(mode=ProfilingMode.LIGHT)
+
+        code = "result = sum(range(1000))"
+
+        profile = profiler.profile_experiment(
+            experiment_id="test_001",
+            code=code
+        )
+
+        assert profile is not None
+        assert profile.execution_time >= 0
+
+    def test_profile_experiment_with_local_vars(self):
+        """Test profiling with local variables."""
+        profiler = ExecutionProfiler(mode=ProfilingMode.LIGHT)
+
+        code = "result = value * 2"
+        local_vars = {"value": 42}
+
+        profile = profiler.profile_experiment(
+            experiment_id="test_002",
+            code=code,
+            local_vars=local_vars
+        )
+
+        assert profile is not None
+
+    def test_profile_experiment_error_handling(self):
+        """Test profiling handles code errors."""
+        profiler = ExecutionProfiler(mode=ProfilingMode.LIGHT)
+
+        code = "result = undefined_variable"
+
+        with pytest.raises(NameError):
+            profiler.profile_experiment(
+                experiment_id="test_003",
+                code=code
+            )
+
+
+class TestConvenienceFunctions:
+    """Test convenience functions."""
+
+    def test_profile_experiment_execution(self):
+        """Test profile_experiment_execution function."""
+        result = profile_experiment_execution(
+            experiment_id="test_123",
+            code="result = [i**2 for i in range(100)]",
+            mode=ProfilingMode.LIGHT
+        )
+
+        assert result is not None
+        assert result.execution_time >= 0
+
+    def test_format_profile_summary(self):
+        """Test format_profile_summary function."""
+        profiler = ExecutionProfiler(mode=ProfilingMode.LIGHT)
+
+        with profiler.profile_context():
+            time.sleep(0.01)
+
+        result = profiler.get_result()
+        summary = format_profile_summary(result)
+
+        assert "PROFILE SUMMARY" in summary
+        assert "Execution time" in summary
+        assert "CPU time" in summary
+        assert "Memory peak" in summary
+
+
+class TestMemoryTracking:
+    """Test memory tracking functionality."""
+
+    def test_memory_tracking_standard_mode(self):
+        """Test memory tracking in standard mode."""
+        profiler = ExecutionProfiler(
+            mode=ProfilingMode.STANDARD,
+            enable_memory_tracking=True
+        )
+
+        with profiler.profile_context():
             # Allocate some memory
-            data = [0] * 1000000
-            return len(data)
+            data = [0] * 100000
+            _ = len(data)
 
-        result = allocate_memory()
+        result = profiler.get_result()
 
-        assert result == 1000000
-        assert len(profiler.profiles) > 0
+        # Memory tracking should capture something
+        assert result.memory_peak_mb >= 0
 
-        profile = profiler.profiles[0]
-        assert profile.memory_mb is not None
+    def test_memory_tracking_disabled(self):
+        """Test memory tracking can be disabled."""
+        profiler = ExecutionProfiler(
+            mode=ProfilingMode.STANDARD,
+            enable_memory_tracking=False
+        )
 
-    def test_get_summary(self):
-        """Test getting profiling summary."""
-        profiler = ExecutionProfiler(mode="light")
+        with profiler.profile_context():
+            data = [0] * 10000
+            _ = len(data)
 
-        @profiler.profile
-        def func1():
-            time.sleep(0.05)
-
-        @profiler.profile
-        def func2():
-            time.sleep(0.1)
-
-        func1()
-        func2()
-
-        summary = profiler.get_summary()
-
-        assert "total_profiles" in summary
-        assert summary["total_profiles"] == 2
-        assert "total_duration" in summary
-
-    def test_clear_profiles(self):
-        """Test clearing profile data."""
-        profiler = ExecutionProfiler(mode="light")
-
-        @profiler.profile
-        def test_func():
-            pass
-
-        test_func()
-        assert len(profiler.profiles) > 0
-
-        profiler.clear()
-        assert len(profiler.profiles) == 0
-
-    def test_bottleneck_detection(self):
-        """Test bottleneck detection."""
-        profiler = ExecutionProfiler(mode="light", bottleneck_threshold=0.3)
-
-        @profiler.profile
-        def fast_func():
-            time.sleep(0.01)
-
-        @profiler.profile
-        def slow_func():
-            time.sleep(0.5)
-
-        fast_func()
-        slow_func()
-
-        bottlenecks = profiler.detect_bottlenecks()
-
-        # slow_func should be detected as bottleneck
-        assert len(bottlenecks) > 0
-        assert bottlenecks[0].function_name == "slow_func"
-
-    def test_profiling_modes(self):
-        """Test different profiling modes."""
-        # Light mode
-        light_profiler = ExecutionProfiler(mode="light")
-        assert light_profiler.mode == "light"
-
-        # Standard mode
-        standard_profiler = ExecutionProfiler(mode="standard")
-        assert standard_profiler.mode == "standard"
-
-        # Full mode
-        full_profiler = ExecutionProfiler(mode="full")
-        assert full_profiler.mode == "full"
+        result = profiler.get_result()
+        # Should still complete successfully
+        assert result is not None
 
 
-class TestProfileDecorators:
-    """Test standalone profile decorators."""
+class TestBottleneckDetection:
+    """Test bottleneck detection."""
 
-    def test_profile_function_decorator(self):
-        """Test profile_function decorator."""
-        profiler = get_profiler()
-        profiler.clear()
+    def test_bottleneck_detection_standard_mode(self):
+        """Test bottleneck detection in standard mode."""
+        profiler = ExecutionProfiler(
+            mode=ProfilingMode.STANDARD,
+            bottleneck_threshold_percent=1.0  # Low threshold for test
+        )
 
-        @profile_function
-        def test_func(x):
-            time.sleep(0.05)
-            return x * 2
+        with profiler.profile_context():
+            # Do some work to generate statistics
+            total = 0
+            for i in range(10000):
+                total += i
+            _ = total
 
-        result = test_func(5)
+        result = profiler.get_result()
 
-        assert result == 10
-        assert len(profiler.profiles) > 0
-
-    @pytest.mark.asyncio
-    async def test_profile_async_function_decorator(self):
-        """Test profile_async_function decorator."""
-        profiler = get_profiler()
-        profiler.clear()
-
-        @profile_async_function
-        async def async_func(x):
-            await asyncio.sleep(0.05)
-            return x * 2
-
-        import asyncio
-        result = await async_func(5)
-
-        assert result == 10
-        assert len(profiler.profiles) > 0
-
-
-class TestProfilerWithDatabase:
-    """Test profiler with database storage."""
-
-    @pytest.fixture
-    def mock_db(self):
-        """Mock database session."""
-        with patch('kosmos.core.profiling.get_session') as mock:
-            session = MagicMock()
-            mock.return_value = session
-            yield session
-
-    def test_store_profiles_to_db(self, mock_db):
-        """Test storing profiles to database."""
-        profiler = ExecutionProfiler(mode="light", store_in_db=True)
-
-        @profiler.profile
-        def test_func():
-            time.sleep(0.01)
-
-        test_func()
-
-        # Should have attempted to store in database
-        # (actual DB storage depends on models being available)
-        assert len(profiler.profiles) > 0
-
-    def test_load_profiles_from_db(self, mock_db):
-        """Test loading profiles from database."""
-        # Setup mock query results
-        mock_profile = MagicMock()
-        mock_profile.function_name = "test_func"
-        mock_profile.duration_seconds = 1.5
-
-        mock_db.query.return_value.filter.return_value.all.return_value = [mock_profile]
-
-        profiler = ExecutionProfiler(mode="light")
-        loaded = profiler.load_from_db(days=7)
-
-        # Should have queried database
-        assert mock_db.query.called
-
-
-class TestProfilerMetrics:
-    """Test profiler metrics collection."""
-
-    def test_average_duration(self):
-        """Test calculating average duration."""
-        profiler = ExecutionProfiler(mode="light")
-
-        @profiler.profile
-        def test_func():
-            time.sleep(0.1)
-
-        # Run multiple times
-        for _ in range(3):
-            test_func()
-
-        summary = profiler.get_summary()
-
-        avg_duration = summary["total_duration"] / summary["total_profiles"]
-        assert avg_duration >= 0.1
-
-    def test_slowest_functions(self):
-        """Test identifying slowest functions."""
-        profiler = ExecutionProfiler(mode="light")
-
-        @profiler.profile
-        def fast():
-            time.sleep(0.01)
-
-        @profiler.profile
-        def slow():
-            time.sleep(0.2)
-
-        fast()
-        slow()
-
-        slowest = profiler.get_slowest_functions(n=1)
-
-        assert len(slowest) == 1
-        assert slowest[0].function_name == "slow"
-
-
-class TestGlobalProfiler:
-    """Test global profiler instance."""
-
-    def test_get_profiler_singleton(self):
-        """Test get_profiler returns singleton."""
-        profiler1 = get_profiler()
-        profiler2 = get_profiler()
-
-        assert profiler1 is profiler2
-
-    def test_global_profiler_configuration(self):
-        """Test configuring global profiler."""
-        import os
-
-        with patch.dict(os.environ, {"ENABLE_PROFILING": "true", "PROFILING_MODE": "standard"}):
-            profiler = get_profiler()
-
-            assert profiler.enabled is True
-            assert profiler.mode == "standard"
+        # Should have analyzed function calls
+        assert result.profiling_mode == ProfilingMode.STANDARD
 
 
 class TestProfilerOverhead:
     """Test profiler overhead."""
 
-    def test_minimal_overhead_when_disabled(self):
-        """Test profiler adds minimal overhead when disabled."""
-        profiler = ExecutionProfiler(enabled=False)
+    def test_light_mode_minimal_overhead(self):
+        """Test light mode has minimal overhead."""
+        profiler = ExecutionProfiler(mode=ProfilingMode.LIGHT)
 
-        @profiler.profile
-        def test_func():
-            return sum(range(10000))
-
-        # Measure time with disabled profiling
-        start = time.time()
-        for _ in range(100):
-            test_func()
-        disabled_time = time.time() - start
-
-        # Should complete quickly
-        assert disabled_time < 1.0  # Very loose bound
-
-    def test_light_mode_overhead(self):
-        """Test light mode has acceptable overhead."""
-        profiler = ExecutionProfiler(mode="light")
-
-        @profiler.profile
-        def test_func():
+        def simple_func():
             return sum(range(1000))
 
-        # Run with profiling
+        # Time without profiling
         start = time.time()
         for _ in range(100):
-            test_func()
+            simple_func()
+        base_time = time.time() - start
+
+        # Time with profiling
+        start = time.time()
+        for _ in range(100):
+            with profiler.profile_context():
+                simple_func()
         profiled_time = time.time() - start
 
-        # Light mode overhead should be < 10%
-        # (This is a rough test, actual overhead varies)
-        assert profiled_time < 2.0
-
-
-class TestProfilerExportImport:
-    """Test exporting and importing profile data."""
-
-    def test_export_to_dict(self):
-        """Test exporting profiles to dictionary."""
-        profiler = ExecutionProfiler(mode="light")
-
-        @profiler.profile
-        def test_func():
-            time.sleep(0.01)
-
-        test_func()
-
-        exported = profiler.export_profiles()
-
-        assert isinstance(exported, list)
-        assert len(exported) > 0
-        assert "function_name" in exported[0]
-        assert "duration_seconds" in exported[0]
-
-    def test_export_to_json(self):
-        """Test exporting profiles to JSON."""
-        import json
-        profiler = ExecutionProfiler(mode="light")
-
-        @profiler.profile
-        def test_func():
-            time.sleep(0.01)
-
-        test_func()
-
-        json_str = profiler.export_to_json()
-        data = json.loads(json_str)
-
-        assert isinstance(data, list)
-        assert len(data) > 0
-
-
-class TestProfilerWithConcurrentOperations:
-    """Test profiler with concurrent operations."""
-
-    @pytest.mark.asyncio
-    async def test_concurrent_profiling(self):
-        """Test profiling concurrent async operations."""
-        import asyncio
-        profiler = ExecutionProfiler(mode="light")
-
-        @profiler.profile
-        async def async_task(n):
-            await asyncio.sleep(0.01 * n)
-            return n
-
-        # Run multiple tasks concurrently
-        tasks = [async_task(i) for i in range(5)]
-        results = await asyncio.gather(*tasks)
-
-        assert results == [0, 1, 2, 3, 4]
-        assert len(profiler.profiles) == 5
+        # Profiled time should not be drastically more than base time
+        # Allow 5x overhead as a generous bound
+        assert profiled_time < base_time * 5

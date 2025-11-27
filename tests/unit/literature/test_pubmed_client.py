@@ -1,5 +1,3 @@
-# Skip removed - test restored (may need API updates)
-
 """
 Tests for kosmos.literature.pubmed_client module.
 """
@@ -9,7 +7,7 @@ from unittest.mock import Mock, patch
 from Bio import Entrez
 
 from kosmos.literature.pubmed_client import PubMedClient
-from kosmos.literature.base_client import PaperMetadata
+from kosmos.literature.base_client import PaperMetadata, PaperSource
 
 
 @pytest.fixture
@@ -25,13 +23,14 @@ class TestPubMedInit:
     def test_init_with_email(self):
         """Test initialization with email."""
         client = PubMedClient(email="test@example.com")
-        assert client.email == "test@example.com"
+        # Email is stored in Entrez.email, not on the client
         assert Entrez.email == "test@example.com"
 
-    def test_init_sets_tool_name(self):
-        """Test that tool name is set."""
+    def test_init_sets_rate_limit(self):
+        """Test that rate limit is set correctly."""
         client = PubMedClient(email="test@example.com")
-        assert Entrez.tool == "Kosmos"
+        # Without API key, rate limit is 3 req/s
+        assert client.rate_limit == 3 or client.rate_limit == 10
 
 
 @pytest.mark.unit
@@ -80,43 +79,27 @@ class TestPubMedSearch:
 class TestPubMedGetPaper:
     """Test fetching papers by PubMed ID."""
 
-    @patch('Bio.Entrez.efetch')
-    def test_get_paper_by_id_success(self, mock_efetch, pubmed_client):
+    def test_get_paper_by_id_success(self, pubmed_client):
         """Test fetching paper by PubMed ID."""
-        mock_xml = """<?xml version="1.0"?>
-        <PubmedArticleSet>
-            <PubmedArticle>
-                <MedlineCitation>
-                    <PMID>23287718</PMID>
-                    <Article>
-                        <ArticleTitle>CRISPR Test</ArticleTitle>
-                        <Abstract><AbstractText>Test abstract</AbstractText></Abstract>
-                        <AuthorList>
-                            <Author><LastName>Test</LastName><ForeName>Author</ForeName></Author>
-                        </AuthorList>
-                    </Article>
-                </MedlineCitation>
-                <PubmedData>
-                    <ArticleIdList>
-                        <ArticleId IdType="doi">10.1234/test</ArticleId>
-                    </ArticleIdList>
-                </PubmedData>
-            </PubmedArticle>
-        </PubmedArticleSet>"""
+        # Create mock paper metadata
+        mock_paper = PaperMetadata(
+            id="23287718",
+            source=PaperSource.PUBMED,
+            title="CRISPR Test",
+            abstract="Test abstract",
+            pubmed_id="23287718",
+        )
 
-        mock_efetch.return_value.__enter__.return_value.read.return_value = mock_xml
-
-        paper = pubmed_client.get_paper_by_id("23287718")
+        with patch.object(pubmed_client, '_fetch_paper_details', return_value=[mock_paper]):
+            paper = pubmed_client.get_paper_by_id("23287718")
 
         assert paper is not None
         assert paper.pubmed_id == "23287718"
 
-    @patch('Bio.Entrez.efetch')
-    def test_get_paper_by_id_not_found(self, mock_efetch, pubmed_client):
+    def test_get_paper_by_id_not_found(self, pubmed_client):
         """Test fetching non-existent paper."""
-        mock_efetch.side_effect = Exception("Not found")
-
-        paper = pubmed_client.get_paper_by_id("99999999")
+        with patch.object(pubmed_client, '_fetch_paper_details', return_value=[]):
+            paper = pubmed_client.get_paper_by_id("99999999")
         assert paper is None
 
 

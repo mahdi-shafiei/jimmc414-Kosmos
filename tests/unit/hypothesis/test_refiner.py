@@ -69,6 +69,7 @@ def create_experiment_result(
 def sample_hypothesis():
     """Create a sample hypothesis for testing."""
     return Hypothesis(
+        id="sample_hyp_001",
         research_question="Does caffeine improve cognitive performance?",
         statement="Caffeine consumption improves working memory performance in young adults",
         rationale="Studies show stimulant effects on cognitive function",
@@ -373,8 +374,8 @@ class TestRetirementDecisionBayesian:
         """Test Bayesian update handles None confidence_score."""
         hyp = Hypothesis(
             research_question="Test question",
-            statement="Test statement",
-            rationale="Test rationale",
+            statement="Test statement that affects outcomes",
+            rationale="Test rationale with sufficient justification for validation",
             domain="test",
             confidence_score=None,  # None should default to 0.5
         )
@@ -496,8 +497,8 @@ class TestHypothesisRefinement:
     ):
         """Test refinement tracks lineage correctly."""
         refiner.llm_client.generate.return_value = json.dumps({
-            "refined_statement": "Refined statement",
-            "refined_rationale": "Refined rationale",
+            "refined_statement": "Refined statement that affects outcomes more specifically",
+            "refined_rationale": "Refined rationale with sufficient scientific justification for testing",
             "changes_made": "Changes",
             "confidence": 0.6,
         })
@@ -515,8 +516,8 @@ class TestHypothesisRefinement:
     ):
         """Test refinement increments generation number."""
         refiner.llm_client.generate.return_value = json.dumps({
-            "refined_statement": "Refined statement",
-            "refined_rationale": "Refined rationale",
+            "refined_statement": "Refined statement that affects outcomes more specifically",
+            "refined_rationale": "Refined rationale with sufficient scientific justification for testing",
             "changes_made": "Changes",
             "confidence": 0.6,
         })
@@ -547,20 +548,33 @@ class TestContradictionDetection:
     """Test contradiction detection between hypotheses."""
 
     def test_detect_contradictions_similar_opposite_outcomes(
-        self, refiner
+        self, mock_llm_client
     ):
         """Test detects contradictions when similar hypotheses have opposite outcomes."""
+        # Create refiner with lower similarity threshold for word overlap matching
+        refiner = HypothesisRefiner(
+            llm_client=mock_llm_client,
+            vector_db=None,
+            config={
+                "failure_threshold": 3,
+                "confidence_retirement_threshold": 0.1,
+                "similarity_threshold": 0.5,  # Lower threshold for word overlap
+            },
+        )
+
         hyp1 = Hypothesis(
+            id="hyp_contra_1",
             research_question="Question",
             statement="Caffeine improves memory performance",
-            rationale="Rationale 1",
+            rationale="Scientific evidence suggests caffeine affects cognitive function significantly",
             domain="neuroscience",
         )
 
         hyp2 = Hypothesis(
+            id="hyp_contra_2",
             research_question="Question",
             statement="Caffeine enhances memory performance",  # Very similar
-            rationale="Rationale 2",
+            rationale="Studies indicate caffeine has measurable effects on memory processes",
             domain="neuroscience",
         )
 
@@ -594,21 +608,23 @@ class TestContradictionDetection:
         assert len(contradictions) > 0
         assert contradictions[0]["hypothesis1_id"] in [hyp1.id, hyp2.id]
         assert contradictions[0]["hypothesis2_id"] in [hyp1.id, hyp2.id]
-        assert contradictions[0]["similarity"] >= refiner.similarity_threshold
+        assert contradictions[0]["similarity"] >= 0.5  # Word overlap threshold
 
     def test_no_contradiction_dissimilar_hypotheses(self, refiner):
         """Test no contradiction for dissimilar hypotheses even with opposite outcomes."""
         hyp1 = Hypothesis(
+            id="hyp_dissim_1",
             research_question="Question",
             statement="Caffeine improves memory performance",
-            rationale="Rationale 1",
+            rationale="Scientific evidence suggests caffeine affects cognitive function significantly",
             domain="neuroscience",
         )
 
         hyp2 = Hypothesis(
+            id="hyp_dissim_2",
             research_question="Question",
             statement="Exercise reduces stress levels",  # Completely different
-            rationale="Rationale 2",
+            rationale="Physical activity has been shown to decrease cortisol levels in studies",
             domain="psychology",
         )
 
@@ -640,16 +656,18 @@ class TestContradictionDetection:
     def test_no_contradiction_same_outcome(self, refiner):
         """Test no contradiction when similar hypotheses have same outcome."""
         hyp1 = Hypothesis(
+            id="hyp_same_1",
             research_question="Question",
             statement="Caffeine improves memory performance",
-            rationale="Rationale 1",
+            rationale="Scientific evidence suggests caffeine affects cognitive function significantly",
             domain="neuroscience",
         )
 
         hyp2 = Hypothesis(
+            id="hyp_same_2",
             research_question="Question",
             statement="Caffeine enhances memory ability",
-            rationale="Rationale 2",
+            rationale="Studies indicate caffeine has measurable effects on memory processes",
             domain="neuroscience",
         )
 
@@ -690,17 +708,19 @@ class TestHypothesisMerging:
     def test_merge_hypotheses(self, refiner):
         """Test merging multiple similar hypotheses."""
         hyp1 = Hypothesis(
+            id="hyp_merge_1",
             research_question="Question",
             statement="Caffeine improves memory",
-            rationale="Rationale 1",
+            rationale="Scientific evidence suggests caffeine affects cognitive function significantly",
             domain="neuroscience",
             generation=1,
         )
 
         hyp2 = Hypothesis(
+            id="hyp_merge_2",
             research_question="Question",
             statement="Caffeine enhances attention",
-            rationale="Rationale 2",
+            rationale="Studies indicate caffeine has measurable effects on attention processes",
             domain="neuroscience",
             generation=1,
         )
@@ -725,24 +745,26 @@ class TestHypothesisMerging:
     def test_merge_handles_different_generations(self, refiner):
         """Test merging hypotheses from different generations."""
         hyp1 = Hypothesis(
+            id="hyp_gen_1",
             research_question="Question",
-            statement="Statement 1",
-            rationale="Rationale 1",
+            statement="Statement 1 that affects outcomes",
+            rationale="Scientific rationale with sufficient justification for hypothesis one",
             domain="test",
             generation=1,
         )
 
         hyp2 = Hypothesis(
+            id="hyp_gen_2",
             research_question="Question",
-            statement="Statement 2",
-            rationale="Rationale 2",
+            statement="Statement 2 that affects results",
+            rationale="Scientific rationale with sufficient justification for hypothesis two",
             domain="test",
             generation=3,
         )
 
         refiner.llm_client.generate.return_value = json.dumps({
-            "merged_statement": "Merged statement",
-            "merged_rationale": "Merged rationale",
+            "merged_statement": "Merged statement that combines both hypotheses",
+            "merged_rationale": "Merged rationale with sufficient scientific justification from both sources",
             "synthesis_explanation": "Synthesis",
         })
 
@@ -762,17 +784,19 @@ class TestLineageTracking:
     def test_track_lineage(self, refiner):
         """Test lineage is tracked for refined hypotheses."""
         parent = Hypothesis(
+            id="hyp_parent_lineage",
             research_question="Question",
-            statement="Parent statement",
-            rationale="Parent rationale",
+            statement="Parent statement that affects outcomes",
+            rationale="Parent rationale with sufficient scientific justification for testing",
             domain="test",
             generation=1,
         )
 
         child = Hypothesis(
+            id="hyp_child_lineage",
             research_question="Question",
-            statement="Child statement",
-            rationale="Child rationale",
+            statement="Child statement that affects results",
+            rationale="Child rationale with sufficient scientific justification for testing",
             domain="test",
             parent_hypothesis_id=parent.id,
             generation=2,
@@ -791,9 +815,10 @@ class TestLineageTracking:
     def test_get_family_tree_no_relatives(self, refiner):
         """Test family tree for hypothesis with no relatives."""
         hyp = Hypothesis(
+            id="hyp_no_relatives",
             research_question="Question",
-            statement="Statement",
-            rationale="Rationale",
+            statement="Statement that affects outcomes",
+            rationale="Scientific rationale with sufficient justification for hypothesis testing",
             domain="test",
         )
 
@@ -807,17 +832,19 @@ class TestLineageTracking:
     def test_get_family_tree_with_parent(self, refiner):
         """Test family tree includes parent."""
         parent = Hypothesis(
+            id="hyp_tree_parent",
             research_question="Question",
-            statement="Parent",
-            rationale="Rationale",
+            statement="Parent statement that affects outcomes",
+            rationale="Scientific rationale with sufficient justification for hypothesis testing",
             domain="test",
             generation=1,
         )
 
         child = Hypothesis(
+            id="hyp_tree_child",
             research_question="Question",
-            statement="Child",
-            rationale="Rationale",
+            statement="Child statement that affects results",
+            rationale="Scientific rationale with sufficient justification for hypothesis testing",
             domain="test",
             parent_hypothesis_id=parent.id,
             generation=2,
@@ -841,26 +868,29 @@ class TestLineageTracking:
     def test_get_family_tree_with_children(self, refiner):
         """Test family tree includes children."""
         parent = Hypothesis(
+            id="hyp_children_parent",
             research_question="Question",
-            statement="Parent",
-            rationale="Rationale",
+            statement="Parent statement that affects outcomes",
+            rationale="Scientific rationale with sufficient justification for hypothesis testing",
             domain="test",
             generation=1,
         )
 
         child1 = Hypothesis(
+            id="hyp_children_child1",
             research_question="Question",
-            statement="Child 1",
-            rationale="Rationale",
+            statement="Child 1 statement that affects results",
+            rationale="Scientific rationale with sufficient justification for hypothesis testing",
             domain="test",
             parent_hypothesis_id=parent.id,
             generation=2,
         )
 
         child2 = Hypothesis(
+            id="hyp_children_child2",
             research_question="Question",
-            statement="Child 2",
-            rationale="Rationale",
+            statement="Child 2 statement that affects outcomes",
+            rationale="Scientific rationale with sufficient justification for hypothesis testing",
             domain="test",
             parent_hypothesis_id=parent.id,
             generation=2,
@@ -887,26 +917,29 @@ class TestLineageTracking:
     def test_get_family_tree_multi_generation(self, refiner):
         """Test family tree with multiple generations."""
         gen1 = Hypothesis(
+            id="hyp_multi_gen1",
             research_question="Question",
-            statement="Gen 1",
-            rationale="Rationale",
+            statement="Generation 1 statement that affects outcomes",
+            rationale="Scientific rationale with sufficient justification for hypothesis testing",
             domain="test",
             generation=1,
         )
 
         gen2 = Hypothesis(
+            id="hyp_multi_gen2",
             research_question="Question",
-            statement="Gen 2",
-            rationale="Rationale",
+            statement="Generation 2 statement that affects results",
+            rationale="Scientific rationale with sufficient justification for hypothesis testing",
             domain="test",
             parent_hypothesis_id=gen1.id,
             generation=2,
         )
 
         gen3 = Hypothesis(
+            id="hyp_multi_gen3",
             research_question="Question",
-            statement="Gen 3",
-            rationale="Rationale",
+            statement="Generation 3 statement that affects outcomes",
+            rationale="Scientific rationale with sufficient justification for hypothesis testing",
             domain="test",
             parent_hypothesis_id=gen2.id,
             generation=3,

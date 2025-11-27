@@ -12,6 +12,7 @@ from datetime import datetime
 from enum import Enum
 import logging
 import json
+import uuid
 import numpy as np
 from pydantic import BaseModel, Field
 
@@ -359,8 +360,9 @@ Respond with JSON:
                 json_str = response[json_start:json_end]
                 refinement = json.loads(json_str)
 
-                # Create refined hypothesis
+                # Create refined hypothesis with new ID
                 refined = Hypothesis(
+                    id=f"hyp_{uuid.uuid4().hex[:12]}",
                     research_question=hypothesis.research_question,
                     statement=refinement.get("refined_statement", hypothesis.statement),
                     rationale=refinement.get("refined_rationale", hypothesis.rationale),
@@ -703,8 +705,9 @@ Respond with JSON:
                 json_str = response[json_start:json_end]
                 merge_data = json.loads(json_str)
 
-                # Create merged hypothesis
+                # Create merged hypothesis with new ID
                 merged = Hypothesis(
+                    id=f"hyp_{uuid.uuid4().hex[:12]}",
                     research_question=hypotheses[0].research_question,
                     statement=merge_data.get("merged_statement", ""),
                     rationale=merge_data.get("merged_rationale", ""),

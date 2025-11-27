@@ -6,326 +6,225 @@ import pytest
 from unittest.mock import Mock, patch, MagicMock
 
 from kosmos.literature.arxiv_client import ArxivClient
-from kosmos.literature.base_client import PaperMetadata
+from kosmos.literature.base_client import PaperMetadata, PaperSource
 
 
 @pytest.fixture
-def arxiv_client():
+def mock_config():
+    """Mock config for consistent max_results."""
+    mock_cfg = Mock()
+    mock_cfg.literature.max_results_per_query = 100
+    return mock_cfg
+
+
+@pytest.fixture
+def arxiv_client(mock_config):
     """Create ArxivClient instance for testing."""
-    return ArxivClient()
+    with patch('kosmos.literature.arxiv_client.get_config', return_value=mock_config):
+        with patch('kosmos.literature.arxiv_client.get_cache') as mock_cache:
+            mock_cache.return_value = None  # Disable caching for tests
+            return ArxivClient(cache_enabled=False)
+
+
+@pytest.fixture
+def mock_arxiv_result():
+    """Create a mock arxiv.Result object."""
+    mock_result = Mock()
+    mock_result.entry_id = "http://arxiv.org/abs/1706.03762v5"
+    mock_result.title = "Attention Is All You Need"
+    mock_result.summary = "We propose the Transformer architecture..."
+    # Create mock authors with string name attribute
+    author1 = Mock()
+    author1.name = "Ashish Vaswani"
+    author2 = Mock()
+    author2.name = "Noam Shazeer"
+    mock_result.authors = [author1, author2]
+    mock_result.published = Mock(year=2017)
+    mock_result.updated = Mock(isoformat=Mock(return_value="2017-06-12T00:00:00"))
+    mock_result.journal_ref = "NeurIPS 2017"
+    mock_result.doi = "10.5555/3295222.3295349"
+    mock_result.pdf_url = "http://arxiv.org/pdf/1706.03762v5"
+    mock_result.primary_category = "cs.CL"
+    mock_result.categories = ["cs.CL", "cs.LG"]
+    mock_result.comment = "Test comment"
+    return mock_result
 
 
 @pytest.mark.unit
 class TestArxivClientInit:
     """Test ArxivClient initialization."""
 
-    def test_init_default(self):
+    def test_init_default(self, mock_config):
         """Test default initialization."""
-        client = ArxivClient()
-        assert client.max_results == 10
-        assert client.sort_by == "relevance"
-        assert client.sort_order == "descending"
+        with patch('kosmos.literature.arxiv_client.get_config', return_value=mock_config):
+            with patch('kosmos.literature.arxiv_client.get_cache'):
+                client = ArxivClient()
+                assert client.max_results == 100  # From config
 
-    def test_init_custom_params(self):
-        """Test initialization with custom parameters."""
-        client = ArxivClient(max_results=20, sort_by="lastUpdatedDate")
-        assert client.max_results == 20
-        assert client.sort_by == "lastUpdatedDate"
+    def test_init_with_cache_disabled(self, mock_config):
+        """Test initialization with cache disabled."""
+        with patch('kosmos.literature.arxiv_client.get_config', return_value=mock_config):
+            with patch('kosmos.literature.arxiv_client.get_cache') as mock_cache:
+                client = ArxivClient(cache_enabled=False)
+                mock_cache.assert_not_called()
 
 
 @pytest.mark.unit
 class TestArxivSearch:
     """Test arXiv search functionality."""
 
-    @patch('arxiv.Search')
-    @patch('arxiv.Client')
-    def test_search_success(self, mock_client_class, mock_search_class, arxiv_client):
+    def test_search_success(self, arxiv_client, mock_arxiv_result):
         """Test successful paper search."""
-        # Mock arxiv Result objects
-        mock_result1 = Mock()
-        mock_result1.get_short_id.return_value = "1706.03762"
-        mock_result1.title = "Attention Is All You Need"
-        mock_result1.authors = [Mock(name="Ashish Vaswani"), Mock(name="Noam Shazeer")]
-        mock_result1.summary = "We propose the Transformer architecture..."
-        mock_result1.published.year = 2017
-        mock_result1.journal_ref = "NeurIPS 2017"
-        mock_result1.doi = "10.5555/3295222.3295349"
-        mock_result1.entry_id = "http://arxiv.org/abs/1706.03762v5"
-        mock_result1.pdf_url = "http://arxiv.org/pdf/1706.03762v5"
-        mock_result1.primary_category = "cs.CL"
-        mock_result1.categories = ["cs.CL", "cs.LG"]
+        with patch.object(arxiv_client, 'client') as mock_client:
+            mock_client.results.return_value = [mock_arxiv_result]
 
-        # Mock client results method
-        mock_client = Mock()
-        mock_client.results.return_value = [mock_result1]
-        mock_client_class.return_value = mock_client
+            papers = arxiv_client.search("attention mechanism", max_results=1)
 
-        # Execute search
-        papers = arxiv_client.search("attention mechanism", max_results=1)
+            assert len(papers) == 1
+            assert isinstance(papers[0], PaperMetadata)
+            assert papers[0].title == "Attention Is All You Need"
+            assert papers[0].arxiv_id == "1706.03762"
+            assert papers[0].year == 2017
+            assert papers[0].source == PaperSource.ARXIV
 
-        # Assertions
-        assert len(papers) == 1
-        assert isinstance(papers[0], PaperMetadata)
-        assert papers[0].title == "Attention Is All You Need"
-        assert papers[0].arxiv_id == "1706.03762"
-        assert len(papers[0].authors) == 2
-        assert papers[0].year == 2017
-        assert papers[0].source == "arxiv"
-
-    @patch('arxiv.Search')
-    @patch('arxiv.Client')
-    def test_search_empty_results(self, mock_client_class, mock_search_class, arxiv_client):
+    def test_search_empty_results(self, arxiv_client):
         """Test search with no results."""
-        mock_client = Mock()
-        mock_client.results.return_value = []
-        mock_client_class.return_value = mock_client
+        with patch.object(arxiv_client, 'client') as mock_client:
+            mock_client.results.return_value = []
 
-        papers = arxiv_client.search("nonexistent_query_xyz123")
-        assert papers == []
+            papers = arxiv_client.search("nonexistent_query_xyz123")
+            assert papers == []
 
-    @patch('arxiv.Search')
-    @patch('arxiv.Client')
-    def test_search_with_cache(self, mock_client_class, mock_search_class, arxiv_client):
-        """Test that search uses caching."""
-        mock_result = Mock()
-        mock_result.get_short_id.return_value = "1706.03762"
-        mock_result.title = "Test Paper"
-        mock_result.authors = [Mock(name="Author One")]
-        mock_result.summary = "Abstract"
-        mock_result.published.year = 2023
-        mock_result.journal_ref = None
-        mock_result.doi = None
-        mock_result.entry_id = "http://arxiv.org/abs/1706.03762"
-        mock_result.pdf_url = "http://arxiv.org/pdf/1706.03762"
-        mock_result.primary_category = "cs.AI"
-        mock_result.categories = ["cs.AI"]
-
-        mock_client = Mock()
-        mock_client.results.return_value = [mock_result]
-        mock_client_class.return_value = mock_client
-
-        # First call - should hit API
-        papers1 = arxiv_client.search("test query", max_results=1)
-        assert len(papers1) == 1
-
-        # Second call with same query - should use cache
-        papers2 = arxiv_client.search("test query", max_results=1)
-        assert len(papers2) == 1
-
-        # Verify cache was used (client.results called only once)
-        assert mock_client.results.call_count == 1
-
-    @patch('arxiv.Client')
-    def test_search_error_handling(self, mock_client_class, arxiv_client):
+    def test_search_error_handling(self, arxiv_client):
         """Test error handling during search."""
-        mock_client = Mock()
-        mock_client.results.side_effect = Exception("API Error")
-        mock_client_class.return_value = mock_client
+        with patch.object(arxiv_client, 'client') as mock_client:
+            mock_client.results.side_effect = Exception("API Error")
 
-        papers = arxiv_client.search("test query")
-        assert papers == []
+            papers = arxiv_client.search("test query")
+            assert papers == []
 
 
 @pytest.mark.unit
 class TestArxivGetPaperById:
     """Test fetching papers by arXiv ID."""
 
-    @patch('arxiv.Search')
-    @patch('arxiv.Client')
-    def test_get_paper_by_id_success(self, mock_client_class, mock_search_class, arxiv_client):
+    def test_get_paper_by_id_success(self, arxiv_client, mock_arxiv_result):
         """Test successfully fetching a paper by ID."""
-        mock_result = Mock()
-        mock_result.get_short_id.return_value = "1706.03762"
-        mock_result.title = "Attention Is All You Need"
-        mock_result.authors = [Mock(name="Ashish Vaswani")]
-        mock_result.summary = "We propose the Transformer..."
-        mock_result.published.year = 2017
-        mock_result.journal_ref = "NeurIPS 2017"
-        mock_result.doi = "10.5555/3295222.3295349"
-        mock_result.entry_id = "http://arxiv.org/abs/1706.03762v5"
-        mock_result.pdf_url = "http://arxiv.org/pdf/1706.03762v5"
-        mock_result.primary_category = "cs.CL"
-        mock_result.categories = ["cs.CL"]
+        with patch.object(arxiv_client, 'client') as mock_client:
+            mock_client.results.return_value = iter([mock_arxiv_result])
 
-        mock_client = Mock()
-        mock_client.results.return_value = [mock_result]
-        mock_client_class.return_value = mock_client
+            paper = arxiv_client.get_paper_by_id("1706.03762")
 
-        paper = arxiv_client.get_paper_by_id("1706.03762")
+            assert paper is not None
+            assert paper.arxiv_id == "1706.03762"
+            assert paper.title == "Attention Is All You Need"
 
-        assert paper is not None
-        assert paper.arxiv_id == "1706.03762"
-        assert paper.title == "Attention Is All You Need"
-
-    @patch('arxiv.Search')
-    @patch('arxiv.Client')
-    def test_get_paper_by_id_not_found(self, mock_client_class, mock_search_class, arxiv_client):
+    def test_get_paper_by_id_not_found(self, arxiv_client):
         """Test fetching a non-existent paper ID."""
-        mock_client = Mock()
-        mock_client.results.return_value = []
-        mock_client_class.return_value = mock_client
+        with patch.object(arxiv_client, 'client') as mock_client:
+            mock_client.results.return_value = iter([])
 
-        paper = arxiv_client.get_paper_by_id("9999.99999")
-        assert paper is None
+            paper = arxiv_client.get_paper_by_id("9999.99999")
+            assert paper is None
+
+    def test_get_paper_by_id_strips_prefix(self, arxiv_client, mock_arxiv_result):
+        """Test that arXiv: prefix is stripped from ID."""
+        with patch.object(arxiv_client, 'client') as mock_client:
+            mock_client.results.return_value = iter([mock_arxiv_result])
+
+            paper = arxiv_client.get_paper_by_id("arXiv:1706.03762")
+
+            assert paper is not None
+            assert paper.arxiv_id == "1706.03762"
 
 
 @pytest.mark.unit
-class TestArxivParseResult:
-    """Test parsing arXiv API results."""
+class TestArxivMetadataConversion:
+    """Test converting arXiv results to PaperMetadata."""
 
-    def test_parse_result_complete(self, arxiv_client):
-        """Test parsing a complete arXiv result."""
-        mock_result = Mock()
-        mock_result.get_short_id.return_value = "1706.03762"
-        mock_result.title = "Attention Is All You Need"
-        mock_result.authors = [Mock(name="Ashish Vaswani"), Mock(name="Noam Shazeer")]
-        mock_result.summary = "We propose the Transformer architecture..."
-        mock_result.published.year = 2017
-        mock_result.journal_ref = "NeurIPS 2017"
-        mock_result.doi = "10.5555/3295222.3295349"
-        mock_result.entry_id = "http://arxiv.org/abs/1706.03762v5"
-        mock_result.pdf_url = "http://arxiv.org/pdf/1706.03762v5"
-        mock_result.primary_category = "cs.CL"
-        mock_result.categories = ["cs.CL", "cs.LG"]
-
-        paper = arxiv_client._parse_result(mock_result)
+    def test_arxiv_to_metadata_complete(self, arxiv_client, mock_arxiv_result):
+        """Test converting a complete arXiv result."""
+        paper = arxiv_client._arxiv_to_metadata(mock_arxiv_result)
 
         assert paper.title == "Attention Is All You Need"
         assert paper.arxiv_id == "1706.03762"
         assert len(paper.authors) == 2
-        assert paper.authors[0] == "Ashish Vaswani"
+        assert paper.authors[0].name == "Ashish Vaswani"
         assert paper.year == 2017
-        assert paper.venue == "NeurIPS 2017"
+        assert paper.journal == "NeurIPS 2017"
         assert paper.doi == "10.5555/3295222.3295349"
-        assert paper.source == "arxiv"
+        assert paper.source == PaperSource.ARXIV
+        assert "cs.cl" in paper.fields
+        assert "cs.lg" in paper.fields
 
-    def test_parse_result_minimal(self, arxiv_client):
-        """Test parsing a minimal arXiv result (only required fields)."""
+    def test_arxiv_to_metadata_minimal(self, arxiv_client):
+        """Test converting a minimal arXiv result."""
         mock_result = Mock()
-        mock_result.get_short_id.return_value = "2301.00000"
+        mock_result.entry_id = "http://arxiv.org/abs/2301.00000"
         mock_result.title = "Minimal Paper"
-        mock_result.authors = [Mock(name="Anonymous")]
         mock_result.summary = "A minimal paper."
-        mock_result.published.year = 2023
+        mock_result.authors = [Mock(name="Anonymous")]
+        mock_result.published = Mock(year=2023)
+        mock_result.updated = None
         mock_result.journal_ref = None
         mock_result.doi = None
-        mock_result.entry_id = "http://arxiv.org/abs/2301.00000"
         mock_result.pdf_url = "http://arxiv.org/pdf/2301.00000"
         mock_result.primary_category = "cs.AI"
         mock_result.categories = ["cs.AI"]
+        mock_result.comment = None
 
-        paper = arxiv_client._parse_result(mock_result)
+        paper = arxiv_client._arxiv_to_metadata(mock_result)
 
         assert paper.title == "Minimal Paper"
         assert paper.arxiv_id == "2301.00000"
-        assert paper.venue is None
+        assert paper.journal is None
         assert paper.doi is None
-        assert paper.source == "arxiv"
+        assert paper.source == PaperSource.ARXIV
 
 
 @pytest.mark.unit
-class TestArxivFiltering:
-    """Test filtering and sorting functionality."""
+class TestArxivBuildQuery:
+    """Test query building functionality."""
 
-    @patch('arxiv.Search')
-    @patch('arxiv.Client')
-    def test_search_with_sort_by_date(self, mock_client_class, mock_search_class):
-        """Test search with sorting by date."""
-        client = ArxivClient(sort_by="submittedDate", sort_order="descending")
+    def test_build_query_simple(self, arxiv_client):
+        """Test building a simple query."""
+        query = arxiv_client._build_query("machine learning", None, None, None)
+        assert "machine learning" in query
 
-        mock_result = Mock()
-        mock_result.get_short_id.return_value = "2023.00001"
-        mock_result.title = "Recent Paper"
-        mock_result.authors = [Mock(name="Author")]
-        mock_result.summary = "Recent work"
-        mock_result.published.year = 2023
-        mock_result.journal_ref = None
-        mock_result.doi = None
-        mock_result.entry_id = "http://arxiv.org/abs/2023.00001"
-        mock_result.pdf_url = "http://arxiv.org/pdf/2023.00001"
-        mock_result.primary_category = "cs.AI"
-        mock_result.categories = ["cs.AI"]
-
-        mock_client = Mock()
-        mock_client.results.return_value = [mock_result]
-        mock_client_class.return_value = mock_client
-
-        papers = client.search("recent papers", max_results=1)
-        assert len(papers) == 1
-
-    @patch('arxiv.Search')
-    @patch('arxiv.Client')
-    def test_search_with_max_results(self, mock_client_class, mock_search_class, arxiv_client):
-        """Test that max_results parameter is respected."""
-        # Create 5 mock results
-        mock_results = []
-        for i in range(5):
-            mock_result = Mock()
-            mock_result.get_short_id.return_value = f"2023.0000{i}"
-            mock_result.title = f"Paper {i}"
-            mock_result.authors = [Mock(name=f"Author {i}")]
-            mock_result.summary = f"Abstract {i}"
-            mock_result.published.year = 2023
-            mock_result.journal_ref = None
-            mock_result.doi = None
-            mock_result.entry_id = f"http://arxiv.org/abs/2023.0000{i}"
-            mock_result.pdf_url = f"http://arxiv.org/pdf/2023.0000{i}"
-            mock_result.primary_category = "cs.AI"
-            mock_result.categories = ["cs.AI"]
-            mock_results.append(mock_result)
-
-        mock_client = Mock()
-        mock_client.results.return_value = mock_results[:3]  # Only return 3
-        mock_client_class.return_value = mock_client
-
-        papers = arxiv_client.search("test query", max_results=3)
-        assert len(papers) == 3
+    def test_build_query_with_fields(self, arxiv_client):
+        """Test building query with category filters."""
+        query = arxiv_client._build_query("neural networks", ["cs.AI", "cs.LG"], None, None)
+        assert "neural networks" in query
+        assert "cat:cs.AI" in query
+        assert "cat:cs.LG" in query
 
 
 @pytest.mark.unit
-class TestArxivCaching:
-    """Test caching behavior."""
+class TestArxivCitations:
+    """Test citation methods (which return empty for arXiv)."""
 
-    def test_cache_key_generation(self, arxiv_client):
-        """Test that cache keys are generated correctly."""
-        key1 = arxiv_client._get_cache_key("machine learning", 10)
-        key2 = arxiv_client._get_cache_key("machine learning", 10)
-        key3 = arxiv_client._get_cache_key("deep learning", 10)
+    def test_get_references_returns_empty(self, arxiv_client):
+        """Test that get_paper_references returns empty list."""
+        refs = arxiv_client.get_paper_references("1706.03762")
+        assert refs == []
 
-        assert key1 == key2  # Same query, same key
-        assert key1 != key3  # Different query, different key
+    def test_get_citations_returns_empty(self, arxiv_client):
+        """Test that get_paper_citations returns empty list."""
+        cites = arxiv_client.get_paper_citations("1706.03762")
+        assert cites == []
 
-    @patch('arxiv.Search')
-    @patch('arxiv.Client')
-    def test_cache_hit_reduces_api_calls(self, mock_client_class, mock_search_class, arxiv_client):
-        """Test that cache hits reduce API calls."""
-        mock_result = Mock()
-        mock_result.get_short_id.return_value = "2023.00001"
-        mock_result.title = "Test Paper"
-        mock_result.authors = [Mock(name="Test Author")]
-        mock_result.summary = "Test abstract"
-        mock_result.published.year = 2023
-        mock_result.journal_ref = None
-        mock_result.doi = None
-        mock_result.entry_id = "http://arxiv.org/abs/2023.00001"
-        mock_result.pdf_url = "http://arxiv.org/pdf/2023.00001"
-        mock_result.primary_category = "cs.AI"
-        mock_result.categories = ["cs.AI"]
 
-        mock_client = Mock()
-        mock_client.results.return_value = [mock_result]
-        mock_client_class.return_value = mock_client
+@pytest.mark.unit
+class TestArxivCategories:
+    """Test category functionality."""
 
-        # First call
-        papers1 = arxiv_client.search("cache test", max_results=1)
-
-        # Second call (should use cache)
-        papers2 = arxiv_client.search("cache test", max_results=1)
-
-        # Verify only one API call was made
-        assert mock_client.results.call_count == 1
-        assert len(papers1) == 1
-        assert len(papers2) == 1
+    def test_get_categories(self, arxiv_client):
+        """Test getting arXiv categories."""
+        categories = arxiv_client.get_categories()
+        assert isinstance(categories, list)
+        assert "cs.AI" in categories
+        assert "cs.LG" in categories
+        assert "cs.CL" in categories
 
 
 @pytest.mark.integration
