@@ -30,6 +30,13 @@ Fix literature search timeout issues to enable literature-enhanced hypothesis ge
 - Added `--with-literature` flag using argparse
 - Usage: `python scripts/baseline_workflow.py 3 --with-literature`
 
+### 5. Configurable Timeouts (config.py)
+- All timeout values now configurable via environment variables:
+  - `LITERATURE_SEARCH_TIMEOUT` (default: 60s) - global search timeout
+  - `LITERATURE_API_TIMEOUT` (default: 30s) - per-API call timeout
+  - `PDF_DOWNLOAD_TIMEOUT` (default: 30s) - PDF extraction timeout
+- Easy to adjust later without code changes
+
 ## Test Results
 
 ### Timeout Verification
@@ -49,14 +56,16 @@ Literature search timed out after 60s. Completed sources: ['arxiv', 'pubmed']
 
 | File | Changes |
 |------|---------|
-| `kosmos/literature/unified_search.py` | ThreadPoolExecutor timeout + PDF timeout |
-| `kosmos/literature/pubmed_client.py` | Entrez API timeouts with helper functions |
+| `kosmos/literature/unified_search.py` | ThreadPoolExecutor timeout + PDF timeout + config |
+| `kosmos/literature/pubmed_client.py` | Entrez API timeouts with helper functions + config |
 | `scripts/baseline_workflow.py` | `--with-literature` CLI flag |
+| `kosmos/config.py` | Added search_timeout, api_timeout, pdf_download_timeout fields |
 
-## Commit
+## Commits
 
 ```
 75307fe Add timeout protection to literature search APIs
+577b8a3 Make literature timeout values configurable via environment variables
 ```
 
 ## Key Insights

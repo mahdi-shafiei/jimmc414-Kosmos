@@ -16,7 +16,7 @@ Continue from Session 15. Literature search timeout fixes complete!
 - E2E tests: 38 passed, 0 failed, 1 skipped
 - Phase 3.5: Literature Integration COMPLETE
 - Literature search has timeout protection (60s global, 30s per source)
-- Commit 75307fe pushed to GitHub
+- Commits 75307fe, 577b8a3 pushed to GitHub
 
 ## Session 15 Results
 - Added ThreadPoolExecutor timeout to unified_search.py (60s)
@@ -24,6 +24,10 @@ Continue from Session 15. Literature search timeout fixes complete!
 - Added PDF extraction timeout (30s per paper)
 - Added --with-literature CLI flag to baseline_workflow.py
 - Verified timeout works: "Literature search timed out after 60s. Completed sources: ['arxiv', 'pubmed']"
+- Made all timeouts configurable via environment variables:
+  - `LITERATURE_SEARCH_TIMEOUT` (default: 60s)
+  - `LITERATURE_API_TIMEOUT` (default: 30s)
+  - `PDF_DOWNLOAD_TIMEOUT` (default: 30s)
 
 ## Recommended Session 16 Focus
 
