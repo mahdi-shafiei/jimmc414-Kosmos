@@ -143,7 +143,7 @@ Reference repositories in [`kosmos-reference/`](kosmos-reference/). Skills integ
 | E2E tests | 39 | 32 | 0 | 7 | Tested with Ollama |
 
 The 7 skipped E2E tests are due to:
-- Docker sandbox not configured (1 test)
+- Docker not running in test environment (1 test)
 - Neo4j not configured (1 test)
 - Test setup complexity requiring refactoring (4 tests)
 - Database model minor issue (1 test)
