@@ -109,6 +109,23 @@ def run_baseline(num_cycles: int = 3, use_literature: bool = False):
                     statement = hyp.statement[:80] if hasattr(hyp, 'statement') else str(hyp)[:80]
                     print(f"  [{i}] {statement}...")
 
+                # Save hypotheses to JSON for later analysis
+                cycle_dir = artifacts_dir / f"cycle_{cycle}"
+                cycle_dir.mkdir(parents=True, exist_ok=True)
+                hypotheses_file = cycle_dir / "hypotheses.json"
+                hyp_data = [
+                    {
+                        "id": getattr(hyp, 'id', f"hyp_{i}"),
+                        "statement": getattr(hyp, 'statement', str(hyp)),
+                        "rationale": getattr(hyp, 'rationale', ''),
+                        "domain": getattr(hyp, 'domain', domain)
+                    }
+                    for i, hyp in enumerate(hypotheses)
+                ]
+                with open(hypotheses_file, "w") as f:
+                    json.dump(hyp_data, f, indent=2)
+                print(f"  Saved to: {hypotheses_file}")
+
             # Step 2: Design experiment for first hypothesis
             if hypotheses:
                 print(f"\n[{cycle}.2] Designing experiment...")
