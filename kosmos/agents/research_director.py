@@ -32,6 +32,11 @@ from kosmos.db.operations import get_hypothesis, get_experiment, get_result
 
 logger = logging.getLogger(__name__)
 
+# Error recovery configuration
+MAX_CONSECUTIVE_ERRORS = 3  # Halt after this many failures in a row
+ERROR_BACKOFF_SECONDS = [2, 4, 8]  # Exponential backoff delays
+ERROR_RECOVERY_LOG_PREFIX = "[ERROR-RECOVERY]"
+
 
 class ResearchDirectorAgent(BaseAgent):
     """
@@ -126,6 +131,11 @@ class ResearchDirectorAgent(BaseAgent):
 
         # Research history
         self.iteration_history: List[Dict[str, Any]] = []
+
+        # Error recovery tracking
+        self._consecutive_errors: int = 0
+        self._error_history: List[Dict[str, Any]] = []
+        self._last_error_time: Optional[datetime] = None
 
         # Thread safety locks for concurrent operations
         self._research_plan_lock = threading.RLock()  # Reentrant lock for nested acquisitions
@@ -459,6 +469,115 @@ class ResearchDirectorAgent(BaseAgent):
         else:
             logger.warning(f"No handler for agent type: {sender_type}")
 
+    # ========================================================================
+    # ERROR RECOVERY
+    # ========================================================================
+
+    def _handle_error_with_recovery(
+        self,
+        error_source: str,
+        error_message: str,
+        recoverable: bool = True,
+        error_details: Optional[Dict[str, Any]] = None
+    ) -> Optional[NextAction]:
+        """
+        Handle an error with recovery strategy.
+
+        Implements:
+        - Consecutive error counting
+        - Exponential backoff
+        - Circuit breaker (halt after MAX_CONSECUTIVE_ERRORS)
+        - Error history tracking
+
+        Args:
+            error_source: Name of the agent/component that failed
+            error_message: Human-readable error description
+            recoverable: Whether this error type can be retried
+            error_details: Additional error context
+
+        Returns:
+            NextAction if recovery possible, None if should abort current handler
+        """
+        import time
+
+        # Update error tracking
+        self.errors_encountered += 1
+        self._consecutive_errors += 1
+        self._last_error_time = datetime.utcnow()
+
+        # Record in error history
+        error_record = {
+            'source': error_source,
+            'message': error_message,
+            'timestamp': self._last_error_time.isoformat(),
+            'consecutive_count': self._consecutive_errors,
+            'recoverable': recoverable,
+            'details': error_details or {}
+        }
+        self._error_history.append(error_record)
+
+        # Log the error
+        logger.error(
+            f"{ERROR_RECOVERY_LOG_PREFIX} {error_source}: {error_message} "
+            f"(attempt {self._consecutive_errors}/{MAX_CONSECUTIVE_ERRORS})"
+        )
+
+        # Check if we've hit the circuit breaker threshold
+        if self._consecutive_errors >= MAX_CONSECUTIVE_ERRORS:
+            logger.error(
+                f"{ERROR_RECOVERY_LOG_PREFIX} Max consecutive errors reached. "
+                f"Transitioning to ERROR state."
+            )
+
+            with self._workflow_context():
+                self.workflow.transition_to(
+                    WorkflowState.ERROR,
+                    action=f"Max errors exceeded: {error_message}",
+                    metadata={'error_history': self._error_history[-MAX_CONSECUTIVE_ERRORS:]}
+                )
+
+            return NextAction.ERROR_RECOVERY
+
+        # For recoverable errors, apply backoff and retry
+        if recoverable:
+            backoff_index = min(self._consecutive_errors - 1, len(ERROR_BACKOFF_SECONDS) - 1)
+            backoff_seconds = ERROR_BACKOFF_SECONDS[backoff_index]
+
+            logger.info(
+                f"{ERROR_RECOVERY_LOG_PREFIX} Waiting {backoff_seconds}s before retry "
+                f"(attempt {self._consecutive_errors + 1})"
+            )
+
+            time.sleep(backoff_seconds)
+
+            # Re-evaluate what action to take
+            return self.decide_next_action()
+
+        # Non-recoverable error - just return None to exit handler
+        logger.warning(
+            f"{ERROR_RECOVERY_LOG_PREFIX} Non-recoverable error from {error_source}. "
+            f"Skipping to next action."
+        )
+        return None
+
+    def _reset_error_streak(self) -> None:
+        """
+        Reset consecutive error counter after successful operation.
+
+        Call this at the end of each successful handler to reset the
+        circuit breaker counter.
+        """
+        if self._consecutive_errors > 0:
+            logger.debug(
+                f"{ERROR_RECOVERY_LOG_PREFIX} Error streak reset "
+                f"(was {self._consecutive_errors} consecutive errors)"
+            )
+        self._consecutive_errors = 0
+
+    # ========================================================================
+    # MESSAGE HANDLERS
+    # ========================================================================
+
     def _handle_hypothesis_generator_response(self, message: AgentMessage):
         """
         Handle response from HypothesisGeneratorAgent.
@@ -470,10 +589,18 @@ class ResearchDirectorAgent(BaseAgent):
         content = message.content
 
         if message.type == MessageType.ERROR:
-            logger.error(f"Hypothesis generation failed: {content.get('error')}")
-            self.errors_encountered += 1
-            # TODO: Implement error recovery strategy
+            recovery_action = self._handle_error_with_recovery(
+                error_source="HypothesisGeneratorAgent",
+                error_message=content.get('error', 'Unknown error'),
+                recoverable=True,
+                error_details={'hypothesis_count_before': len(self.research_plan.hypothesis_pool)}
+            )
+            if recovery_action:
+                self._execute_next_action(recovery_action)
             return
+
+        # Success - reset error streak
+        self._reset_error_streak()
 
         # Extract hypotheses
         hypothesis_ids = content.get("hypothesis_ids", [])
@@ -511,9 +638,18 @@ class ResearchDirectorAgent(BaseAgent):
         content = message.content
 
         if message.type == MessageType.ERROR:
-            logger.error(f"Experiment design failed: {content.get('error')}")
-            self.errors_encountered += 1
+            recovery_action = self._handle_error_with_recovery(
+                error_source="ExperimentDesignerAgent",
+                error_message=content.get('error', 'Unknown error'),
+                recoverable=True,
+                error_details={'untested_hypotheses': len(self.research_plan.get_untested_hypotheses())}
+            )
+            if recovery_action:
+                self._execute_next_action(recovery_action)
             return
+
+        # Success - reset error streak
+        self._reset_error_streak()
 
         protocol_id = content.get("protocol_id")
         hypothesis_id = content.get("hypothesis_id")
@@ -550,9 +686,18 @@ class ResearchDirectorAgent(BaseAgent):
         content = message.content
 
         if message.type == MessageType.ERROR:
-            logger.error(f"Experiment execution failed: {content.get('error')}")
-            self.errors_encountered += 1
+            recovery_action = self._handle_error_with_recovery(
+                error_source="Executor",
+                error_message=content.get('error', 'Unknown error'),
+                recoverable=True,
+                error_details={'experiments_queued': len(self.research_plan.experiment_queue)}
+            )
+            if recovery_action:
+                self._execute_next_action(recovery_action)
             return
+
+        # Success - reset error streak
+        self._reset_error_streak()
 
         result_id = content.get("result_id")
         protocol_id = content.get("protocol_id")
@@ -604,9 +749,18 @@ class ResearchDirectorAgent(BaseAgent):
         content = message.content
 
         if message.type == MessageType.ERROR:
-            logger.error(f"Result analysis failed: {content.get('error')}")
-            self.errors_encountered += 1
+            recovery_action = self._handle_error_with_recovery(
+                error_source="DataAnalystAgent",
+                error_message=content.get('error', 'Unknown error'),
+                recoverable=True,
+                error_details={'results_pending': len(self.research_plan.results)}
+            )
+            if recovery_action:
+                self._execute_next_action(recovery_action)
             return
+
+        # Success - reset error streak
+        self._reset_error_streak()
 
         result_id = content.get("result_id")
         hypothesis_id = content.get("hypothesis_id")
@@ -664,9 +818,21 @@ class ResearchDirectorAgent(BaseAgent):
         content = message.content
 
         if message.type == MessageType.ERROR:
-            logger.error(f"Hypothesis refinement failed: {content.get('error')}")
-            self.errors_encountered += 1
+            recovery_action = self._handle_error_with_recovery(
+                error_source="HypothesisRefiner",
+                error_message=content.get('error', 'Unknown error'),
+                recoverable=True,
+                error_details={
+                    'tested_hypotheses': len(self.research_plan.tested_hypotheses),
+                    'supported_hypotheses': len(self.research_plan.supported_hypotheses)
+                }
+            )
+            if recovery_action:
+                self._execute_next_action(recovery_action)
             return
+
+        # Success - reset error streak
+        self._reset_error_streak()
 
         refined_ids = content.get("refined_hypothesis_ids", [])
         retired_ids = content.get("retired_hypothesis_ids", [])
@@ -937,6 +1103,149 @@ class ResearchDirectorAgent(BaseAgent):
         return message
 
     # ========================================================================
+    # PROMPT BUILDING
+    # ========================================================================
+
+    def _build_hypothesis_evaluation_prompt(self, hyp_id: str) -> str:
+        """
+        Build evaluation prompt with actual hypothesis data from database.
+
+        Args:
+            hyp_id: Hypothesis ID to load
+
+        Returns:
+            Formatted prompt string with hypothesis details, or fallback if unavailable
+        """
+        try:
+            with get_session() as session:
+                hypothesis = get_hypothesis(session, hyp_id, with_experiments=True)
+
+                if hypothesis:
+                    # Build rich prompt with actual data
+                    related_papers = hypothesis.related_papers or []
+                    related_str = ', '.join(related_papers[:5]) if related_papers else 'None identified'
+
+                    testability = hypothesis.testability_score or 0.0
+                    novelty = hypothesis.novelty_score or 0.0
+
+                    return f"""Evaluate this hypothesis for testability and scientific merit:
+
+## Hypothesis Details
+- **ID**: {hyp_id}
+- **Statement**: {hypothesis.statement}
+- **Rationale**: {hypothesis.rationale or 'Not provided'}
+- **Current Scores**: Testability={testability:.2f}, Novelty={novelty:.2f}
+
+## Research Context
+- **Research Question**: {self.research_question}
+- **Domain**: {self.domain or 'General'}
+- **Related Papers**: {related_str}
+
+## Evaluation Criteria
+Rate on scale 1-10:
+1. Testability: Can this be experimentally tested?
+2. Novelty: Is this approach novel?
+3. Impact: Would confirmation significantly advance the field?
+
+Provide brief JSON response:
+{{"testability": X, "novelty": X, "impact": X, "recommendation": "proceed/refine/reject", "reasoning": "brief explanation"}}
+"""
+        except Exception as e:
+            logger.warning(f"Failed to load hypothesis {hyp_id}: {e}")
+
+        # Fallback to basic prompt
+        return f"""Evaluate this hypothesis for testability and scientific merit:
+
+Hypothesis ID: {hyp_id}
+Research Question: {self.research_question}
+Domain: {self.domain or "General"}
+
+Rate on scale 1-10:
+1. Testability: Can this be experimentally tested?
+2. Novelty: Is this approach novel?
+3. Impact: Would confirmation significantly advance the field?
+
+Provide brief JSON response:
+{{"testability": X, "novelty": X, "impact": X, "recommendation": "proceed/refine/reject", "reasoning": "brief explanation"}}
+"""
+
+    def _build_result_analysis_prompt(self, result_id: str) -> str:
+        """
+        Build analysis prompt with actual result data from database.
+
+        Args:
+            result_id: Result ID to load
+
+        Returns:
+            Formatted prompt string with result details, or fallback if unavailable
+        """
+        import json as json_module
+
+        try:
+            with get_session() as session:
+                result = get_result(session, result_id)
+
+                if result:
+                    # Get related experiment and hypothesis
+                    experiment = result.experiment
+                    hypothesis = experiment.hypothesis if experiment else None
+
+                    # Format data for prompt
+                    result_data = result.data or {}
+                    stats = result.statistical_tests or {}
+
+                    return f"""Analyze this experiment result:
+
+## Result Details
+- **Result ID**: {result_id}
+- **Experiment**: {experiment.description if experiment else 'Unknown'}
+- **Hypothesis Tested**: {hypothesis.statement if hypothesis else 'Unknown'}
+
+## Research Context
+- **Research Question**: {self.research_question}
+- **Domain**: {self.domain or 'General'}
+
+## Result Data
+```json
+{json_module.dumps(result_data, indent=2, default=str)}
+```
+
+## Statistical Tests
+{json_module.dumps(stats, indent=2) if stats else 'No statistical tests performed'}
+
+## Previous Interpretation
+{result.interpretation or 'None available'}
+
+## Analysis Required
+Provide analysis including:
+1. Key findings
+2. Statistical significance
+3. Relationship to hypothesis (supported/refuted/inconclusive)
+4. Next steps
+
+Provide brief JSON response:
+{{"significance": "high/medium/low", "hypothesis_supported": true/false/inconclusive, "key_finding": "summary", "next_steps": "recommendation"}}
+"""
+        except Exception as e:
+            logger.warning(f"Failed to load result {result_id}: {e}")
+
+        # Fallback to basic prompt
+        return f"""Analyze this experiment result:
+
+Result ID: {result_id}
+Research Question: {self.research_question}
+
+Provide analysis including:
+1. Key findings
+2. Statistical significance
+3. Relationship to hypothesis
+4. Next steps
+
+Provide brief JSON response:
+{{"significance": "high/medium/low", "hypothesis_supported": true/false/inconclusive, "key_finding": "summary", "next_steps": "recommendation"}}
+"""
+
+    # ========================================================================
     # CONCURRENT OPERATIONS
     # ========================================================================
 
@@ -1018,21 +1327,8 @@ class ResearchDirectorAgent(BaseAgent):
             # Create batch requests for hypothesis evaluation
             requests = []
             for i, hyp_id in enumerate(hypothesis_ids):
-                # TODO: Load actual hypothesis text from database
-                prompt = f"""Evaluate this hypothesis for testability and scientific merit:
-
-Hypothesis ID: {hyp_id}
-Research Question: {self.research_question}
-Domain: {self.domain or "General"}
-
-Rate on scale 1-10:
-1. Testability: Can this be experimentally tested?
-2. Novelty: Is this approach novel?
-3. Impact: Would confirmation significantly advance the field?
-
-Provide brief JSON response:
-{{"testability": X, "novelty": X, "impact": X, "recommendation": "proceed/refine/reject", "reasoning": "brief explanation"}}
-"""
+                # Build prompt with actual hypothesis data from database
+                prompt = self._build_hypothesis_evaluation_prompt(hyp_id)
 
                 requests.append(BatchRequest(
                     id=hyp_id,
@@ -1102,21 +1398,8 @@ Provide brief JSON response:
             # Create batch requests for result analysis
             requests = []
             for result_id in result_ids:
-                # TODO: Load actual result data from database
-                prompt = f"""Analyze this experiment result:
-
-Result ID: {result_id}
-Research Question: {self.research_question}
-
-Provide analysis including:
-1. Key findings
-2. Statistical significance
-3. Relationship to hypothesis
-4. Next steps
-
-Provide brief JSON response:
-{{"significance": "high/medium/low", "hypothesis_supported": true/false/inconclusive, "key_finding": "summary", "next_steps": "recommendation"}}
-"""
+                # Build prompt with actual result data from database
+                prompt = self._build_result_analysis_prompt(result_id)
 
                 requests.append(BatchRequest(
                     id=result_id,
@@ -1215,6 +1498,29 @@ Provide a structured, actionable plan in 2-3 paragraphs.
         Returns:
             NextAction: Next action to take
         """
+        # Budget enforcement check - halt if budget exceeded
+        try:
+            from kosmos.core.metrics import get_metrics, BudgetExceededError
+            metrics = get_metrics()
+            if metrics.budget_enabled:
+                metrics.enforce_budget()
+        except BudgetExceededError as e:
+            logger.error(f"[BUDGET] Research halted: {e}")
+
+            # Transition to CONVERGED state gracefully
+            with self._workflow_context():
+                self.workflow.transition_to(
+                    WorkflowState.CONVERGED,
+                    action="Budget limit reached - research halted",
+                    metadata={"reason": "budget_exceeded", "cost": e.current_cost, "limit": e.limit}
+                )
+
+            # Return CONVERGE to signal workflow completion
+            return NextAction.CONVERGE
+        except ImportError:
+            # Metrics module not available - continue without enforcement
+            logger.debug("Metrics module not available for budget check")
+
         current_state = self.workflow.current_state
 
         # Enhanced debug logging

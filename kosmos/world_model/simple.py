@@ -24,6 +24,7 @@ See: https://refactoring.guru/design-patterns/adapter
 
 import json
 import logging
+import uuid
 from datetime import datetime
 from pathlib import Path
 from typing import Any, Dict, List, Optional
@@ -340,6 +341,32 @@ class Neo4jWorldModel(WorldModelStorage, EntityManager):
             except (ValueError, TypeError):
                 pass
 
+        # Load annotations from node property
+        annotations = []
+        annotations_raw = node.get('annotations', [])
+        if annotations_raw:
+            for ann_json in annotations_raw:
+                try:
+                    if isinstance(ann_json, str):
+                        ann_dict = json.loads(ann_json)
+                    else:
+                        ann_dict = ann_json
+
+                    ann_created_at = None
+                    if ann_dict.get('created_at'):
+                        try:
+                            ann_created_at = datetime.fromisoformat(ann_dict['created_at'])
+                        except ValueError:
+                            pass
+
+                    annotations.append(Annotation(
+                        text=ann_dict['text'],
+                        created_by=ann_dict['created_by'],
+                        created_at=ann_created_at
+                    ))
+                except Exception as e:
+                    logger.debug(f"Failed to parse annotation in node: {e}")
+
         return Entity(
             id=node.get("entity_id", node.get("paper_id")),
             type=entity_type,
@@ -350,7 +377,7 @@ class Neo4jWorldModel(WorldModelStorage, EntityManager):
             updated_at=updated_at,
             created_by=node.get("created_by"),
             verified=node.get("verified", False),
-            annotations=[],  # TODO: Phase 2 - load annotations
+            annotations=annotations,
         )
 
     def update_entity(self, entity_id: str, updates: Dict[str, Any]) -> None:
@@ -869,26 +896,133 @@ class Neo4jWorldModel(WorldModelStorage, EntityManager):
         """
         Add annotation to entity.
 
-        For Simple Mode, we store annotations as a JSON array in node properties.
-        Phase 4 (Production Mode) will store in separate PostgreSQL table.
+        Stores annotations as a JSON array in the Neo4j node's 'annotations' property.
+        Each annotation is serialized as a JSON string within the array.
 
         Args:
-            entity_id: Entity to annotate
-            annotation: Annotation to add
+            entity_id: ID of entity to annotate (entity_id or paper_id)
+            annotation: Annotation object to add
+
+        Note:
+            - Creates annotations array if it doesn't exist
+            - Appends to existing annotations array
+            - Timestamps are ISO 8601 formatted
         """
-        # TODO: Phase 2 - Implement annotation storage
-        # For now, log the annotation
-        logger.info(f"Annotation added to {entity_id}: {annotation.text}")
+        if not self.connected:
+            logger.warning(
+                f"Not connected to Neo4j, annotation not persisted for {entity_id}"
+            )
+            return
+
+        # Serialize annotation to JSON-compatible dict
+        ann_dict = {
+            'text': annotation.text,
+            'created_by': annotation.created_by,
+            'created_at': (annotation.created_at or datetime.utcnow()).isoformat(),
+            'annotation_id': str(uuid.uuid4())  # Unique ID for each annotation
+        }
+
+        # Cypher query: append to annotations array, create if null
+        query = """
+        MATCH (n)
+        WHERE n.entity_id = $entity_id OR n.paper_id = $entity_id
+        SET n.annotations = CASE
+            WHEN n.annotations IS NULL THEN [$annotation]
+            ELSE n.annotations + $annotation
+        END,
+        n.updated_at = $updated_at
+        RETURN count(n) as updated, n.entity_id as eid
+        """
+
+        try:
+            result = self.graph.run(
+                query,
+                entity_id=entity_id,
+                annotation=json.dumps(ann_dict),
+                updated_at=datetime.utcnow().isoformat()
+            ).data()
+
+            if result and result[0]['updated'] > 0:
+                logger.info(
+                    f"Annotation added to {entity_id} by {annotation.created_by}: "
+                    f"{annotation.text[:50]}{'...' if len(annotation.text) > 50 else ''}"
+                )
+            else:
+                logger.warning(f"Entity not found for annotation: {entity_id}")
+
+        except Exception as e:
+            logger.error(f"Failed to add annotation to {entity_id}: {e}")
+            raise
 
     def get_annotations(self, entity_id: str) -> List[Annotation]:
         """
         Get all annotations for an entity.
 
+        Retrieves and deserializes the annotations array from the Neo4j node.
+
         Args:
-            entity_id: Entity to query
+            entity_id: ID of entity to query (entity_id or paper_id)
 
         Returns:
-            List of annotations (empty if none)
+            List of Annotation objects, empty list if none or on error
+
+        Note:
+            - Gracefully handles missing annotations property
+            - Skips malformed annotation entries with warning
+            - Returns annotations in order they were added
         """
-        # TODO: Phase 2 - Implement annotation retrieval
-        return []
+        if not self.connected:
+            logger.debug(f"Not connected to Neo4j, returning empty annotations for {entity_id}")
+            return []
+
+        query = """
+        MATCH (n)
+        WHERE n.entity_id = $entity_id OR n.paper_id = $entity_id
+        RETURN n.annotations as annotations
+        """
+
+        try:
+            result = self.graph.run(query, entity_id=entity_id).data()
+
+            if not result:
+                logger.debug(f"Entity not found: {entity_id}")
+                return []
+
+            annotations_raw = result[0].get('annotations')
+            if not annotations_raw:
+                return []
+
+            annotations = []
+            for i, ann_json in enumerate(annotations_raw):
+                try:
+                    # Parse JSON string to dict
+                    if isinstance(ann_json, str):
+                        ann_dict = json.loads(ann_json)
+                    else:
+                        ann_dict = ann_json
+
+                    # Reconstruct Annotation object
+                    created_at = None
+                    if ann_dict.get('created_at'):
+                        try:
+                            created_at = datetime.fromisoformat(ann_dict['created_at'])
+                        except ValueError:
+                            logger.debug(f"Invalid created_at format: {ann_dict['created_at']}")
+
+                    annotations.append(Annotation(
+                        text=ann_dict['text'],
+                        created_by=ann_dict['created_by'],
+                        created_at=created_at
+                    ))
+
+                except (json.JSONDecodeError, KeyError, TypeError) as e:
+                    logger.warning(
+                        f"Failed to parse annotation {i} for {entity_id}: {e}"
+                    )
+                    continue
+
+            return annotations
+
+        except Exception as e:
+            logger.error(f"Failed to get annotations for {entity_id}: {e}")
+            return []

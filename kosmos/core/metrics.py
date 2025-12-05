@@ -59,6 +59,31 @@ class BudgetAlert:
         }
 
 
+class BudgetExceededError(Exception):
+    """
+    Raised when budget limit is exceeded.
+
+    Attributes:
+        current_cost: Actual cost incurred
+        limit: Configured budget limit
+        usage_percent: Percentage of budget used
+    """
+
+    def __init__(
+        self,
+        current_cost: float,
+        limit: float,
+        usage_percent: float = None,
+        message: str = None
+    ):
+        self.current_cost = current_cost
+        self.limit = limit
+        self.usage_percent = usage_percent or (current_cost / limit * 100 if limit else 0)
+        super().__init__(
+            message or f"Budget exceeded: ${current_cost:.2f} spent (limit: ${limit:.2f}, {self.usage_percent:.1f}%)"
+        )
+
+
 class MetricsCollector:
     """
     Collect and aggregate metrics.
@@ -754,6 +779,28 @@ class MetricsCollector:
             dict: Budget status
         """
         return self.check_budget()
+
+    def enforce_budget(self) -> None:
+        """
+        Check budget and raise exception if exceeded.
+
+        This method should be called before each expensive operation
+        to prevent runaway costs.
+
+        Raises:
+            BudgetExceededError: If current spending exceeds budget limit
+        """
+        if not self.budget_enabled:
+            return  # No enforcement if budget not enabled
+
+        status = self.check_budget()
+
+        if status.get('budget_exceeded'):
+            raise BudgetExceededError(
+                current_cost=status.get('current_cost_usd', 0),
+                limit=self.budget_limit_usd,
+                usage_percent=status.get('usage_percent', 100)
+            )
 
     def reset_budget_alerts(self):
         """Clear all triggered budget alerts."""

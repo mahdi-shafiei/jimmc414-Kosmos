@@ -1293,26 +1293,26 @@ cypher-shell -u neo4j -p kosmos-password \
 
 | Phase | Task | Status | Checkpoint |
 |-------|------|--------|------------|
-| A | A1: Budget Enforcement | Pending | CP1 |
-| A | A2: Error Recovery | Pending | CP2 |
-| B | B1: Annotation Storage | Pending | CP3 |
-| B | B2: Data Loading | Pending | CP4 |
-| C | C1: Async Providers | Pending | CP5 |
-| D | D2: Neo4j Integration | Pending | CP6 |
+| A | A1: Budget Enforcement | ✅ COMPLETE | CP1 |
+| A | A2: Error Recovery | ✅ COMPLETE | CP2 |
+| B | B1: Annotation Storage | ✅ COMPLETE | CP3 |
+| B | B2: Data Loading | ✅ COMPLETE | CP4 |
+| C | C1: Async Providers | ✅ COMPLETE | CP5 |
+| D | D2: Neo4j Integration | ✅ COMPLETE | CP6 |
 
-**Total Estimated Effort**: 19-27 hours
+**Implementation Completed**: December 5, 2025
 
 ---
 
 ## Appendix: File Change Summary
 
-| File | Task | Changes |
-|------|------|---------|
-| `kosmos/core/metrics.py` | A1 | +27 lines (exception + method) |
-| `kosmos/agents/research_director.py` | A1, A2, B2 | +120 lines |
-| `kosmos/world_model/simple.py` | B1 | +70 lines |
-| `kosmos/core/providers/openai.py` | C1 | +60 lines |
-| `kosmos/core/providers/anthropic.py` | C1 | +60 lines |
-| `tests/e2e/test_system_sanity.py` | D2 | Remove skip marker |
+| File | Task | Actual Changes |
+|------|------|----------------|
+| `kosmos/core/metrics.py` | A1 | +47 lines (BudgetExceededError + enforce_budget) |
+| `kosmos/agents/research_director.py` | A1, A2, B2 | +388 lines (error recovery + prompt builders) |
+| `kosmos/world_model/simple.py` | B1 | +158 lines (annotation storage + loading) |
+| `kosmos/core/providers/openai.py` | C1 | +80 lines (AsyncOpenAI + generate_async) |
+| `kosmos/core/providers/anthropic.py` | C1 | +77 lines (AsyncAnthropic + generate_async) |
+| `tests/e2e/test_system_sanity.py` | D2 | +51 lines (proper test implementation) |
 
-**Total New Lines**: ~340 lines (excluding tests)
+**Total New Lines**: ~801 lines (actual implementation)

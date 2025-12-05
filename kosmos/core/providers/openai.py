@@ -11,10 +11,11 @@ from typing import Any, Dict, List, Optional
 from datetime import datetime
 
 try:
-    from openai import OpenAI
+    from openai import OpenAI, AsyncOpenAI
     HAS_OPENAI = True
 except ImportError:
     HAS_OPENAI = False
+    AsyncOpenAI = None
 
 from kosmos.core.providers.base import (
     LLMProvider,
@@ -140,6 +141,11 @@ class OpenAIProvider(LLMProvider):
                 client_args['organization'] = self.organization
 
             self.client = OpenAI(**client_args)
+
+            # Lazy-initialized async client (same config as sync client)
+            self._async_client: Optional[AsyncOpenAI] = None
+            self._async_client_args = client_args.copy()
+
             logger.info(f"OpenAI provider initialized (type: {self.provider_type}, model: {self.model})")
 
         except Exception as e:
@@ -276,6 +282,20 @@ class OpenAIProvider(LLMProvider):
             logger.error(f"OpenAI generation failed: {e}")
             raise ProviderAPIError("openai", f"Generation failed: {e}", raw_error=e)
 
+    @property
+    def async_client(self) -> 'AsyncOpenAI':
+        """
+        Lazy-initialize async client with same config as sync client.
+
+        Returns:
+            AsyncOpenAI: Async OpenAI client instance
+        """
+        if self._async_client is None:
+            if AsyncOpenAI is None:
+                raise ImportError("AsyncOpenAI not available. Upgrade openai package.")
+            self._async_client = AsyncOpenAI(**self._async_client_args)
+        return self._async_client
+
     async def generate_async(
         self,
         prompt: str,
@@ -286,7 +306,7 @@ class OpenAIProvider(LLMProvider):
         **kwargs
     ) -> LLMResponse:
         """
-        Generate text asynchronously.
+        Generate text asynchronously using true async OpenAI client.
 
         Args:
             prompt: The user prompt
@@ -298,14 +318,56 @@ class OpenAIProvider(LLMProvider):
 
         Returns:
             LLMResponse: Unified response object
-
-        Note:
-            Currently delegates to sync version.
-            TODO: Implement true async with AsyncOpenAI
         """
-        # For now, delegate to sync version
-        # TODO: Implement true async with AsyncOpenAI
-        return self.generate(prompt, system, max_tokens, temperature, stop_sequences, **kwargs)
+        import time as time_module
+        start_time = time_module.time()
+
+        # Build messages
+        messages = []
+        if system:
+            messages.append({"role": "system", "content": system})
+        messages.append({"role": "user", "content": prompt})
+
+        try:
+            # Use async client for true async execution
+            response = await self.async_client.chat.completions.create(
+                model=self.model,
+                messages=messages,
+                max_tokens=max_tokens,
+                temperature=temperature,
+                stop=stop_sequences
+            )
+
+            # Parse response (same as sync)
+            content = response.choices[0].message.content or ""
+            input_tokens = response.usage.prompt_tokens if response.usage else 0
+            output_tokens = response.usage.completion_tokens if response.usage else 0
+
+            duration = time_module.time() - start_time
+
+            # Log if enabled
+            try:
+                from kosmos.config import get_config
+                if get_config().logging.log_llm_calls:
+                    logger.debug(
+                        "[LLM] OpenAI async: model=%s, in=%d, out=%d, duration=%.2fs",
+                        self.model, input_tokens, output_tokens, duration
+                    )
+            except Exception:
+                pass
+
+            return LLMResponse(
+                content=content,
+                model=self.model,
+                usage=UsageStats(
+                    input_tokens=input_tokens,
+                    output_tokens=output_tokens
+                )
+            )
+
+        except Exception as e:
+            logger.error(f"Async OpenAI API error: {e}")
+            raise ProviderAPIError("openai", f"Async generation failed: {e}", raw_error=e)
 
     def generate_with_messages(
         self,

@@ -444,10 +444,57 @@ print(f"RESULT:{result}")
         print(f"   Created, stored, and retrieved hypothesis")
         print(f"   ID: {hyp_id[:8]}...")
 
-    @pytest.mark.skip(reason="Neo4j authentication not configured")
+    @pytest.mark.requires_neo4j
     def test_knowledge_graph(self):
         """Test knowledge graph operations."""
-        pass
+        from kosmos.knowledge import get_knowledge_graph
+
+        print("\n🔄 Testing knowledge graph operations...")
+
+        # Get the knowledge graph instance
+        kg = get_knowledge_graph()
+
+        # Skip if not connected
+        if not kg.connected:
+            pytest.skip("Neo4j not connected - check NEO4J_URI, NEO4J_USER, NEO4J_PASSWORD")
+
+        print("  ✅ Connected to Neo4j")
+
+        # Test basic paper creation
+        from kosmos.literature.base_client import PaperMetadata, PaperSource
+
+        test_paper = PaperMetadata(
+            paper_id="test_kg_paper_12345",
+            title="Test Knowledge Graph Paper",
+            authors=["Test Author"],
+            abstract="A test paper for knowledge graph E2E testing.",
+            source=PaperSource.SEMANTIC_SCHOLAR
+        )
+
+        # Add paper to graph
+        try:
+            kg.add_paper(test_paper)
+            print(f"  ✅ Added paper: {test_paper.paper_id}")
+
+            # Query the paper back
+            query = "MATCH (p:Paper {paper_id: $id}) RETURN p"
+            result = kg.run(query, id=test_paper.paper_id).data()
+            assert len(result) > 0, "Paper not found in graph"
+            print(f"  ✅ Retrieved paper from graph")
+
+            # Cleanup
+            kg.run("MATCH (p:Paper {paper_id: $id}) DELETE p", id=test_paper.paper_id)
+            print(f"  ✅ Cleaned up test paper")
+
+        except Exception as e:
+            # Cleanup on error
+            try:
+                kg.run("MATCH (p:Paper {paper_id: $id}) DELETE p", id=test_paper.paper_id)
+            except Exception:
+                pass
+            raise e
+
+        print(f"✅ Knowledge graph operations working")
 
 
 @pytest.mark.e2e

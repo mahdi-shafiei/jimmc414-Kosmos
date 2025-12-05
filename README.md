@@ -4,11 +4,11 @@ Open-source implementation of the autonomous AI scientist described in [Lu et al
 
 [![Version](https://img.shields.io/badge/version-0.2.0--alpha-blue.svg)](https://github.com/jimmc414/Kosmos)
 [![Status](https://img.shields.io/badge/status-alpha-orange.svg)](https://github.com/jimmc414/Kosmos)
-[![Implementation](https://img.shields.io/badge/core-75%25%20production--ready-green.svg)](120525_implementation_gaps_v2.md)
-[![Implementation](https://img.shields.io/badge/deferred-20%25%20Phase%202%2F4-yellow.svg)](120525_implementation_gaps_v2.md)
+[![Implementation](https://img.shields.io/badge/core-90%25%20production--ready-green.svg)](120525_implementation_gaps_v2.md)
+[![Implementation](https://img.shields.io/badge/deferred-5%25%20Phase%204-yellow.svg)](120525_implementation_gaps_v2.md)
 [![Tests](https://img.shields.io/badge/unit-339%20passing-green.svg)](TESTS_STATUS.md)
 
-**Current state**: Core research loop operational. All 6 original paper gaps implemented. Neo4j knowledge graph fully implemented (1,025 lines) but requires integration testing. Debug mode with `--trace` flag provides full observability. See [Project Status](#project-status) for honest assessment and [Implementation Gaps Analysis](120525_implementation_gaps_v2.md) for detailed breakdown.
+**Current state**: Core research loop operational with budget enforcement, error recovery, and annotation storage. All 6 original paper gaps + 6 implementation gaps resolved. Neo4j knowledge graph fully implemented (1,025 lines) with E2E tests enabled. True async LLM providers implemented. Debug mode with `--trace` flag provides full observability. See [Project Status](#project-status) for honest assessment and [Implementation Gaps Analysis](120525_implementation_gaps_v2.md) for detailed breakdown.
 
 ## Paper Gap Analysis
 

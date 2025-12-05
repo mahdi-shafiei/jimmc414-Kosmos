@@ -10,10 +10,11 @@ import logging
 from typing import Any, Dict, List, Optional
 
 try:
-    from anthropic import Anthropic
+    from anthropic import Anthropic, AsyncAnthropic
     HAS_ANTHROPIC = True
 except ImportError:
     HAS_ANTHROPIC = False
+    AsyncAnthropic = None
 
 from kosmos.core.providers.base import (
     LLMProvider,
@@ -117,6 +118,10 @@ class AnthropicProvider(LLMProvider):
         except Exception as e:
             logger.error(f"Failed to initialize Anthropic client: {e}")
             raise ProviderAPIError("anthropic", f"Failed to initialize: {e}", raw_error=e)
+
+        # Lazy-initialized async client (same config as sync client)
+        self._async_client: Optional[AsyncAnthropic] = None
+        self._async_base_url = self.base_url
 
         # Initialize cache
         self.cache: Optional[ClaudeCache] = None
@@ -335,6 +340,23 @@ class AnthropicProvider(LLMProvider):
             logger.error(f"Anthropic generation failed: {e}")
             raise ProviderAPIError("anthropic", f"Generation failed: {e}", raw_error=e)
 
+    @property
+    def async_client(self) -> 'AsyncAnthropic':
+        """
+        Lazy-initialize async client with same config as sync client.
+
+        Returns:
+            AsyncAnthropic: Async Anthropic client instance
+        """
+        if self._async_client is None:
+            if AsyncAnthropic is None:
+                raise ImportError("AsyncAnthropic not available. Upgrade anthropic package.")
+            if self._async_base_url:
+                self._async_client = AsyncAnthropic(api_key=self.api_key, base_url=self._async_base_url)
+            else:
+                self._async_client = AsyncAnthropic(api_key=self.api_key)
+        return self._async_client
+
     async def generate_async(
         self,
         prompt: str,
@@ -345,7 +367,7 @@ class AnthropicProvider(LLMProvider):
         **kwargs
     ) -> LLMResponse:
         """
-        Generate text asynchronously (delegated to sync for now).
+        Generate text asynchronously using true async Anthropic client.
 
         Args:
             prompt: The user prompt
@@ -358,9 +380,54 @@ class AnthropicProvider(LLMProvider):
         Returns:
             LLMResponse: Unified response object
         """
-        # For now, delegate to sync version
-        # TODO: Implement true async with AsyncAnthropic
-        return self.generate(prompt, system, max_tokens, temperature, stop_sequences, **kwargs)
+        import time as time_module
+        start_time = time_module.time()
+
+        try:
+            # Use async client for true async execution
+            response = await self.async_client.messages.create(
+                model=self._resolve_model(**kwargs),
+                max_tokens=max_tokens,
+                system=system or "",
+                messages=[{"role": "user", "content": prompt}],
+                temperature=temperature,
+                stop_sequences=stop_sequences or []
+            )
+
+            # Parse response (same as sync)
+            content = ""
+            for block in response.content:
+                if hasattr(block, 'text'):
+                    content += block.text
+
+            input_tokens = response.usage.input_tokens if response.usage else 0
+            output_tokens = response.usage.output_tokens if response.usage else 0
+
+            duration = time_module.time() - start_time
+
+            # Log if enabled
+            try:
+                from kosmos.config import get_config
+                if get_config().logging.log_llm_calls:
+                    logger.debug(
+                        "[LLM] Anthropic async: model=%s, in=%d, out=%d, duration=%.2fs",
+                        self.model, input_tokens, output_tokens, duration
+                    )
+            except Exception:
+                pass
+
+            return LLMResponse(
+                content=content,
+                model=self.model,
+                usage=UsageStats(
+                    input_tokens=input_tokens,
+                    output_tokens=output_tokens
+                )
+            )
+
+        except Exception as e:
+            logger.error(f"Async Anthropic API error: {e}")
+            raise ProviderAPIError("anthropic", f"Async generation failed: {e}", raw_error=e)
 
     def generate_with_messages(
         self,
