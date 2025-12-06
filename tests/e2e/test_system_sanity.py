@@ -52,7 +52,10 @@ class TestComponentSanity:
 
         print("\n💡 Testing hypothesis generator...")
 
-        generator = HypothesisGeneratorAgent(config={"num_hypotheses": 2})
+        generator = HypothesisGeneratorAgent(config={
+            "num_hypotheses": 2,
+            "use_literature_context": False  # Skip literature search for E2E speed
+        })
 
         # Generate hypotheses
         response = generator.generate_hypotheses(
