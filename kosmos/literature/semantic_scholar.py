@@ -5,6 +5,7 @@ Uses the official semanticscholar Python package with enhanced caching and
 citation support.
 """
 
+from itertools import islice
 from semanticscholar import SemanticScholar
 from semanticscholar.Paper import Paper as S2Paper
 from typing import List, Optional
@@ -134,8 +135,10 @@ class SemanticScholarClient(BaseLiteratureClient):
             )
 
             # Convert to PaperMetadata
+            # Use islice to limit iteration - PaginatedResults can fetch
+            # infinitely, causing hangs if we iterate the full generator
             papers = []
-            for result in results:
+            for result in islice(results, max_results):
                 paper = self._s2_to_metadata(result)
 
                 # Apply additional filters

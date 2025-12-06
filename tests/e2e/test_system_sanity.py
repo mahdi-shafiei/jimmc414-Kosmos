@@ -53,8 +53,7 @@ class TestComponentSanity:
         print("\n💡 Testing hypothesis generator...")
 
         generator = HypothesisGeneratorAgent(config={
-            "num_hypotheses": 2,
-            "use_literature_context": False  # Skip literature search for E2E speed
+            "num_hypotheses": 2
         })
 
         # Generate hypotheses
@@ -464,35 +463,34 @@ print(f"RESULT:{result}")
         print("  ✅ Connected to Neo4j")
 
         # Test basic paper creation
-        from kosmos.literature.base_client import PaperMetadata, PaperSource
+        from kosmos.literature.base_client import PaperMetadata, PaperSource, Author
 
         test_paper = PaperMetadata(
-            paper_id="test_kg_paper_12345",
+            id="test_kg_paper_12345",
             title="Test Knowledge Graph Paper",
-            authors=["Test Author"],
+            authors=[Author(name="Test Author")],
             abstract="A test paper for knowledge graph E2E testing.",
             source=PaperSource.SEMANTIC_SCHOLAR
         )
 
         # Add paper to graph
         try:
-            kg.add_paper(test_paper)
-            print(f"  ✅ Added paper: {test_paper.paper_id}")
+            kg.create_paper(test_paper)
+            print(f"  ✅ Added paper: {test_paper.id}")
 
-            # Query the paper back
-            query = "MATCH (p:Paper {paper_id: $id}) RETURN p"
-            result = kg.run(query, id=test_paper.paper_id).data()
-            assert len(result) > 0, "Paper not found in graph"
+            # Query the paper back using KnowledgeGraph API
+            paper_node = kg.get_paper(test_paper.id)
+            assert paper_node is not None, "Paper not found in graph"
             print(f"  ✅ Retrieved paper from graph")
 
             # Cleanup
-            kg.run("MATCH (p:Paper {paper_id: $id}) DELETE p", id=test_paper.paper_id)
+            kg.delete_paper(test_paper.id)
             print(f"  ✅ Cleaned up test paper")
 
         except Exception as e:
             # Cleanup on error
             try:
-                kg.run("MATCH (p:Paper {paper_id: $id}) DELETE p", id=test_paper.paper_id)
+                kg.delete_paper(test_paper.id)
             except Exception:
                 pass
             raise e

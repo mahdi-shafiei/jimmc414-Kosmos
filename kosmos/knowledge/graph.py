@@ -76,6 +76,7 @@ class KnowledgeGraph:
             self._ensure_container_running()
 
         # Connect to Neo4j
+        self._connected = False
         try:
             self.graph = Graph(
                 self.uri,
@@ -85,6 +86,7 @@ class KnowledgeGraph:
 
             # Test connection
             self.graph.run("RETURN 1").data()
+            self._connected = True
 
             logger.info(
                 f"Connected to Neo4j at {self.uri} "
@@ -93,15 +95,25 @@ class KnowledgeGraph:
 
         except Exception as e:
             logger.error(f"Failed to connect to Neo4j: {e}")
-            raise
+            self.graph = None
+            # Don't raise - let callers check self.connected
 
-        # Create matchers for queries
-        self.node_matcher = NodeMatcher(self.graph)
-        self.rel_matcher = RelationshipMatcher(self.graph)
+        # Create matchers for queries (only if connected)
+        if self._connected:
+            self.node_matcher = NodeMatcher(self.graph)
+            self.rel_matcher = RelationshipMatcher(self.graph)
 
-        # Create indexes for performance
-        if create_indexes:
-            self._create_indexes()
+            # Create indexes for performance
+            if create_indexes:
+                self._create_indexes()
+        else:
+            self.node_matcher = None
+            self.rel_matcher = None
+
+    @property
+    def connected(self) -> bool:
+        """Check if connected to Neo4j."""
+        return self._connected
 
     def _ensure_container_running(self):
         """
