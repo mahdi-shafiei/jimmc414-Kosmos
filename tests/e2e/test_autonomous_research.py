@@ -2,13 +2,18 @@
 End-to-End tests for autonomous research workflow.
 
 Tests multi-cycle autonomous operation verifying all components integrate correctly.
+
+These tests use REAL LLM API calls (Anthropic Claude) - not mocks.
+Requires ANTHROPIC_API_KEY environment variable.
 """
 
+import os
 import pytest
 import asyncio
 from pathlib import Path
 from datetime import datetime
 
+import anthropic
 from kosmos.workflow.research_loop import ResearchWorkflow
 
 
@@ -16,10 +21,14 @@ from kosmos.workflow.research_loop import ResearchWorkflow
 # E2E Test Configuration
 # ============================================================================
 
-# Mark all tests as E2E and slow
+# Mark all tests as E2E and slow, skip if no API key
 pytestmark = [
     pytest.mark.e2e,
-    pytest.mark.slow
+    pytest.mark.slow,
+    pytest.mark.skipif(
+        not os.getenv("ANTHROPIC_API_KEY"),
+        reason="Requires ANTHROPIC_API_KEY for real LLM calls"
+    )
 ]
 
 
@@ -28,16 +37,22 @@ pytestmark = [
 # ============================================================================
 
 @pytest.fixture
-def e2e_artifacts_dir(temp_dir):
+def e2e_artifacts_dir(tmp_path):
     """Create E2E artifacts directory."""
-    artifacts = temp_dir / "e2e_artifacts"
+    artifacts = tmp_path / "e2e_artifacts"
     artifacts.mkdir(parents=True, exist_ok=True)
     return artifacts
 
 
 @pytest.fixture
-def e2e_workflow(e2e_artifacts_dir):
-    """Create E2E workflow instance."""
+def anthropic_client():
+    """Create real Anthropic client for LLM calls."""
+    return anthropic.Anthropic()
+
+
+@pytest.fixture
+def e2e_workflow(e2e_artifacts_dir, anthropic_client):
+    """Create E2E workflow instance with real LLM client."""
     return ResearchWorkflow(
         research_objective="""
         Investigate the role of KRAS mutations in pancreatic cancer drug resistance.
@@ -47,7 +62,7 @@ def e2e_workflow(e2e_artifacts_dir):
         3. Review relevant literature for therapeutic targets
         4. Generate hypotheses for combination therapies
         """,
-        anthropic_client=None,  # Mock mode for testing
+        anthropic_client=anthropic_client,  # Real LLM client
         artifacts_dir=str(e2e_artifacts_dir),
         max_cycles=20
     )
@@ -114,8 +129,8 @@ class TestAutonomousResearchE2E:
         # Run across early, middle, and late cycles
         await e2e_workflow.run(num_cycles=5, tasks_per_cycle=10)
 
-        # Early cycles should have more exploration
-        # (verified by mock plan creator behavior)
+        # Early cycles should have more exploration tasks
+        # Plan creator adjusts exploration ratio by cycle number
 
         for i, cycle_result in enumerate(e2e_workflow.cycle_results):
             assert cycle_result['tasks_generated'] == 10
@@ -125,10 +140,11 @@ class TestWorkflowRobustness:
     """Tests for workflow robustness."""
 
     @pytest.mark.asyncio
-    async def test_workflow_continues_after_failures(self, e2e_artifacts_dir):
+    async def test_workflow_continues_after_failures(self, e2e_artifacts_dir, anthropic_client):
         """Test workflow continues after individual cycle failures."""
         workflow = ResearchWorkflow(
             research_objective="Test robustness",
+            anthropic_client=anthropic_client,
             artifacts_dir=str(e2e_artifacts_dir)
         )
 
@@ -150,10 +166,11 @@ class TestWorkflowRobustness:
         assert result['cycles_completed'] == 2
 
     @pytest.mark.asyncio
-    async def test_handles_large_task_count(self, e2e_artifacts_dir):
+    async def test_handles_large_task_count(self, e2e_artifacts_dir, anthropic_client):
         """Test workflow handles larger task counts."""
         workflow = ResearchWorkflow(
             research_objective="Test scale",
+            anthropic_client=anthropic_client,
             artifacts_dir=str(e2e_artifacts_dir)
         )
 
@@ -222,10 +239,11 @@ class TestPerformance:
     """Tests for performance characteristics."""
 
     @pytest.mark.asyncio
-    async def test_reasonable_execution_time(self, e2e_artifacts_dir):
+    async def test_reasonable_execution_time(self, e2e_artifacts_dir, anthropic_client):
         """Test that workflow completes in reasonable time."""
         workflow = ResearchWorkflow(
             research_objective="Performance test",
+            anthropic_client=anthropic_client,
             artifacts_dir=str(e2e_artifacts_dir)
         )
 
@@ -233,8 +251,8 @@ class TestPerformance:
         await workflow.run(num_cycles=2, tasks_per_cycle=5)
         elapsed = (datetime.now() - start_time).total_seconds()
 
-        # Should complete quickly in mock mode (< 30 seconds)
-        assert elapsed < 30, f"Workflow took {elapsed}s, expected < 30s"
+        # With real LLM calls, expect 2-5 minutes for 2 cycles
+        assert elapsed < 300, f"Workflow took {elapsed}s, expected < 300s (5 min)"
 
 
 class TestPaperRequirements:
