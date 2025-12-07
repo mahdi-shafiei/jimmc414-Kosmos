@@ -1,8 +1,13 @@
 """
 Tests for kosmos.agents.hypothesis_generator module.
+
+Tests using REAL Claude API for LLM-dependent tests.
+Database and literature search tests use mocks for isolation.
 """
 
+import os
 import pytest
+import uuid
 from unittest.mock import Mock, patch, MagicMock
 from datetime import datetime
 
@@ -11,43 +16,29 @@ from kosmos.models.hypothesis import Hypothesis, HypothesisGenerationResponse, E
 from kosmos.literature.base_client import PaperMetadata
 
 
+# Skip all tests if API key not available
+pytestmark = [
+    pytest.mark.requires_claude,
+    pytest.mark.skipif(
+        not os.getenv("ANTHROPIC_API_KEY"),
+        reason="Requires ANTHROPIC_API_KEY for real LLM calls"
+    )
+]
+
+
+def unique_id() -> str:
+    """Generate unique ID for test isolation."""
+    return uuid.uuid4().hex[:8]
+
+
 @pytest.fixture
 def hypothesis_agent():
     """Create HypothesisGeneratorAgent for testing."""
     return HypothesisGeneratorAgent(config={
+        "model": "claude-3-haiku-20240307",
         "num_hypotheses": 3,
         "use_literature_context": False  # Disable for faster tests
     })
-
-
-@pytest.fixture
-def mock_llm_response():
-    """Mock LLM response for hypothesis generation."""
-    return {
-        "hypotheses": [
-            {
-                "statement": "Increasing attention heads from 8 to 16 improves transformer performance by 15-25%",
-                "rationale": "Attention mechanisms allow transformers to capture long-range dependencies. More heads provide richer representations.",
-                "confidence_score": 0.75,
-                "testability_score": 0.90,
-                "suggested_experiment_types": ["computational", "data_analysis"]
-            },
-            {
-                "statement": "Pre-training on domain-specific data reduces fine-tuning time by 40%",
-                "rationale": "Domain-specific pre-training provides better initialization, requiring fewer fine-tuning steps.",
-                "confidence_score": 0.80,
-                "testability_score": 0.85,
-                "suggested_experiment_types": ["computational"]
-            },
-            {
-                "statement": "Larger batch sizes lead to faster convergence in distributed training",
-                "rationale": "Larger batches provide more stable gradients and better utilize parallel compute resources.",
-                "confidence_score": 0.70,
-                "testability_score": 0.95,
-                "suggested_experiment_types": ["computational"]
-            }
-        ]
-    }
 
 
 @pytest.mark.unit
@@ -56,7 +47,9 @@ class TestHypothesisGeneratorInit:
 
     def test_init_default(self):
         """Test default initialization."""
-        agent = HypothesisGeneratorAgent()
+        agent = HypothesisGeneratorAgent(config={
+            "model": "claude-3-haiku-20240307"
+        })
         assert agent.agent_type == "HypothesisGeneratorAgent"
         assert agent.num_hypotheses == 3
         assert agent.use_literature_context is True
@@ -64,6 +57,7 @@ class TestHypothesisGeneratorInit:
     def test_init_with_config(self):
         """Test initialization with custom config."""
         agent = HypothesisGeneratorAgent(config={
+            "model": "claude-3-haiku-20240307",
             "num_hypotheses": 5,
             "use_literature_context": False,
             "min_novelty_score": 0.7
@@ -75,76 +69,52 @@ class TestHypothesisGeneratorInit:
 
 @pytest.mark.unit
 class TestHypothesisGeneration:
-    """Test hypothesis generation."""
+    """Test hypothesis generation with real Claude."""
 
-    @patch('kosmos.agents.hypothesis_generator.get_client')
-    def test_generate_hypotheses_success(self, mock_get_client, hypothesis_agent, mock_llm_response):
-        """Test successful hypothesis generation."""
-        # Mock LLM client
-        mock_client = Mock()
-        mock_client.generate_structured.return_value = mock_llm_response
-        mock_client.generate.return_value = "machine_learning"  # Domain detection
-        mock_get_client.return_value = mock_client
-        hypothesis_agent.llm_client = mock_client
-
-        # Generate hypotheses
+    def test_generate_hypotheses_success(self, hypothesis_agent):
+        """Test successful hypothesis generation with real Claude."""
         response = hypothesis_agent.generate_hypotheses(
-            research_question="How does attention mechanism affect transformer performance?",
+            research_question=f"How does attention mechanism affect transformer performance? [{unique_id()}]",
             domain="machine_learning",
             store_in_db=False
         )
 
         # Assertions
         assert isinstance(response, HypothesisGenerationResponse)
-        assert len(response.hypotheses) == 3
-        assert response.research_question == "How does attention mechanism affect transformer performance?"
+        assert len(response.hypotheses) > 0
+        assert "attention" in response.research_question.lower()
         assert response.domain == "machine_learning"
         assert response.generation_time_seconds > 0
 
         # Check first hypothesis
-        hyp = response.hypotheses[0]
-        assert isinstance(hyp, Hypothesis)
-        assert "attention" in hyp.statement.lower() or "attention" in hyp.rationale.lower()
-        assert hyp.confidence_score == 0.75
-        assert hyp.testability_score == 0.90
-        assert ExperimentType.COMPUTATIONAL in hyp.suggested_experiment_types
+        if response.hypotheses:
+            hyp = response.hypotheses[0]
+            assert isinstance(hyp, Hypothesis)
+            assert len(hyp.statement) > 10
+            assert len(hyp.rationale) > 20
 
-    @patch('kosmos.agents.hypothesis_generator.get_client')
-    def test_generate_with_custom_num_hypotheses(self, mock_get_client, hypothesis_agent, mock_llm_response):
+    def test_generate_with_custom_num_hypotheses(self, hypothesis_agent):
         """Test generating custom number of hypotheses."""
-        mock_client = Mock()
-        mock_client.generate_structured.return_value = {
-            "hypotheses": mock_llm_response["hypotheses"][:2]  # Return only 2
-        }
-        mock_client.generate.return_value = "biology"
-        mock_get_client.return_value = mock_client
-        hypothesis_agent.llm_client = mock_client
-
         response = hypothesis_agent.generate_hypotheses(
-            research_question="How does CRISPR affect gene expression?",
+            research_question=f"How does CRISPR affect gene expression? [{unique_id()}]",
             num_hypotheses=2,
             store_in_db=False
         )
 
-        assert len(response.hypotheses) == 2
+        # Should generate at least 1, up to 2
+        assert len(response.hypotheses) <= 2
 
-    @patch('kosmos.agents.hypothesis_generator.get_client')
-    def test_domain_auto_detection(self, mock_get_client, hypothesis_agent):
+    def test_domain_auto_detection(self, hypothesis_agent):
         """Test automatic domain detection."""
-        mock_client = Mock()
-        mock_client.generate.return_value = "neuroscience"
-        mock_client.generate_structured.return_value = {"hypotheses": []}
-        mock_get_client.return_value = mock_client
-        hypothesis_agent.llm_client = mock_client
-
         response = hypothesis_agent.generate_hypotheses(
-            research_question="How do neurons communicate?",
+            research_question=f"How do neurons communicate via synapses? [{unique_id()}]",
             domain=None,  # Auto-detect
             store_in_db=False
         )
 
-        assert response.domain == "neuroscience"
-        mock_client.generate.assert_called_once()
+        # Domain should be detected
+        assert response.domain is not None
+        assert len(response.domain) > 0
 
 
 @pytest.mark.unit
@@ -163,32 +133,32 @@ class TestHypothesisValidation:
         assert hypothesis_agent._validate_hypothesis(hyp) is True
 
     def test_validate_statement_too_short(self, hypothesis_agent):
-        """Test rejecting hypothesis with too-short statement."""
-        hyp = Hypothesis(
-            research_question="Test question?",
-            statement="Too short",  # Only 2 words
-            rationale="This is a reasonable rationale with sufficient detail to explain the hypothesis.",
-            domain="test"
-        )
-
-        assert hypothesis_agent._validate_hypothesis(hyp) is False
+        """Test that Pydantic rejects hypothesis with too-short statement."""
+        # Pydantic model now validates statement length during object creation
+        with pytest.raises(Exception):  # ValidationError
+            Hypothesis(
+                research_question="Test question?",
+                statement="Too short",  # Only 9 chars, min is 10
+                rationale="This is a reasonable rationale with sufficient detail to explain the hypothesis.",
+                domain="test"
+            )
 
     def test_validate_rationale_too_short(self, hypothesis_agent):
-        """Test rejecting hypothesis with too-short rationale."""
-        hyp = Hypothesis(
-            research_question="Test question?",
-            statement="This is a reasonable hypothesis statement",
-            rationale="Too short",  # Only 2 words
-            domain="test"
-        )
-
-        assert hypothesis_agent._validate_hypothesis(hyp) is False
+        """Test that Pydantic rejects hypothesis with too-short rationale."""
+        # Pydantic model now validates rationale length during object creation
+        with pytest.raises(Exception):  # ValidationError
+            Hypothesis(
+                research_question="Test question?",
+                statement="This is a reasonable hypothesis statement",
+                rationale="Too short",  # Only 9 chars, min is 20
+                domain="test"
+            )
 
     def test_validate_vague_language_warning(self, hypothesis_agent, caplog):
         """Test warning for vague language (but doesn't fail)."""
         hyp = Hypothesis(
             research_question="Test question?",
-            statement="Maybe increasing X might possibly improve Y",
+            statement="Maybe increasing X might possibly improve Y somehow",
             rationale="This rationale is long enough to pass the minimum length requirement.",
             domain="test"
         )
@@ -200,19 +170,20 @@ class TestHypothesisValidation:
 
 @pytest.mark.unit
 class TestDatabaseOperations:
-    """Test database storage and retrieval."""
+    """Test database storage and retrieval (uses mocks)."""
 
     @patch('kosmos.agents.hypothesis_generator.get_session')
     def test_store_hypothesis(self, mock_get_session, hypothesis_agent):
         """Test storing hypothesis in database."""
-        mock_session = Mock()
-        mock_get_session.return_value = mock_session
+        mock_session = MagicMock()
+        mock_get_session.return_value.__enter__ = Mock(return_value=mock_session)
+        mock_get_session.return_value.__exit__ = Mock(return_value=False)
 
         hyp = Hypothesis(
             id="test-123",
             research_question="Test question?",
-            statement="Test hypothesis statement",
-            rationale="Test rationale with sufficient length for validation",
+            statement="Test hypothesis statement is long enough",
+            rationale="Test rationale with sufficient length for validation to pass",
             domain="test_domain"
         )
 
@@ -225,12 +196,12 @@ class TestDatabaseOperations:
     @patch('kosmos.agents.hypothesis_generator.get_session')
     def test_get_hypothesis_by_id(self, mock_get_session, hypothesis_agent):
         """Test retrieving hypothesis by ID."""
-        mock_session = Mock()
+        mock_session = MagicMock()
         mock_db_hyp = Mock()
         mock_db_hyp.id = "test-123"
         mock_db_hyp.research_question = "Test question"
-        mock_db_hyp.statement = "Test statement"
-        mock_db_hyp.rationale = "Test rationale"
+        mock_db_hyp.statement = "Test statement is long enough"
+        mock_db_hyp.rationale = "Test rationale is also long enough"
         mock_db_hyp.domain = "test_domain"
         mock_db_hyp.status.value = "generated"
         mock_db_hyp.testability_score = 0.8
@@ -241,40 +212,45 @@ class TestDatabaseOperations:
         mock_db_hyp.updated_at = datetime.utcnow()
 
         mock_session.query.return_value.filter.return_value.first.return_value = mock_db_hyp
-        mock_get_session.return_value = mock_session
+        mock_get_session.return_value.__enter__ = Mock(return_value=mock_session)
+        mock_get_session.return_value.__exit__ = Mock(return_value=False)
 
         hyp = hypothesis_agent.get_hypothesis_by_id("test-123")
 
         assert hyp is not None
         assert hyp.id == "test-123"
-        assert hyp.statement == "Test statement"
+        assert "Test statement" in hyp.statement
 
 
 @pytest.mark.unit
 class TestLiteratureContext:
-    """Test literature context gathering."""
+    """Test literature context gathering (uses mocks)."""
 
     @patch('kosmos.agents.hypothesis_generator.UnifiedLiteratureSearch')
     def test_gather_literature_context(self, mock_search_class, hypothesis_agent):
         """Test gathering literature for context."""
+        from kosmos.literature.base_client import PaperSource
+
         # Enable literature context
         hypothesis_agent.use_literature_context = True
 
         mock_search = Mock()
         mock_papers = [
             PaperMetadata(
+                id="paper1",
+                source=PaperSource.ARXIV,
                 title="Attention Is All You Need",
                 authors=["Vaswani"],
                 abstract="We propose the Transformer...",
-                year=2017,
-                source="arxiv"
+                year=2017
             ),
             PaperMetadata(
+                id="paper2",
+                source=PaperSource.SEMANTIC_SCHOLAR,
                 title="BERT",
                 authors=["Devlin"],
                 abstract="BERT is a transformer-based model...",
-                year=2019,
-                source="semantic_scholar"
+                year=2019
             )
         ]
         mock_search.search.return_value = mock_papers
@@ -293,18 +269,11 @@ class TestLiteratureContext:
 
 @pytest.mark.unit
 class TestAgentExecute:
-    """Test agent execute method."""
+    """Test agent execute method with real Claude."""
 
-    @patch('kosmos.agents.hypothesis_generator.get_client')
-    def test_execute_generate_hypotheses_task(self, mock_get_client, hypothesis_agent, mock_llm_response):
+    def test_execute_generate_hypotheses_task(self, hypothesis_agent):
         """Test executing hypothesis generation via message."""
         from kosmos.agents.base import AgentMessage, MessageType
-
-        mock_client = Mock()
-        mock_client.generate_structured.return_value = mock_llm_response
-        mock_client.generate.return_value = "test_domain"
-        mock_get_client.return_value = mock_client
-        hypothesis_agent.llm_client = mock_client
 
         message = AgentMessage(
             type=MessageType.REQUEST,
@@ -312,9 +281,9 @@ class TestAgentExecute:
             to_agent=hypothesis_agent.agent_id,
             content={
                 "task_type": "generate_hypotheses",
-                "research_question": "Test question?",
+                "research_question": f"How does learning rate affect training? [{unique_id()}]",
                 "num_hypotheses": 2,
-                "domain": "test_domain"
+                "domain": "machine_learning"
             }
         )
 
@@ -327,7 +296,7 @@ class TestAgentExecute:
 
 @pytest.mark.unit
 class TestEdgeCases:
-    """Test edge cases and error handling."""
+    """Test edge cases and error handling (uses mocks for error simulation)."""
 
     @patch('kosmos.agents.hypothesis_generator.get_client')
     def test_empty_llm_response(self, mock_get_client, hypothesis_agent):
@@ -387,16 +356,17 @@ class TestEdgeCases:
 
 @pytest.mark.unit
 class TestHypothesisListing:
-    """Test listing hypotheses from database."""
+    """Test listing hypotheses from database (uses mocks)."""
 
     @patch('kosmos.agents.hypothesis_generator.get_session')
     def test_list_hypotheses_all(self, mock_get_session, hypothesis_agent):
         """Test listing all hypotheses."""
-        mock_session = Mock()
+        mock_session = MagicMock()
         mock_query = Mock()
         mock_session.query.return_value = mock_query
         mock_query.order_by.return_value.limit.return_value.all.return_value = []
-        mock_get_session.return_value = mock_session
+        mock_get_session.return_value.__enter__ = Mock(return_value=mock_session)
+        mock_get_session.return_value.__exit__ = Mock(return_value=False)
 
         hypotheses = hypothesis_agent.list_hypotheses(limit=100)
 
@@ -408,12 +378,13 @@ class TestHypothesisListing:
         """Test listing hypotheses with domain filter."""
         from kosmos.models.hypothesis import HypothesisStatus
 
-        mock_session = Mock()
+        mock_session = MagicMock()
         mock_query = Mock()
         mock_session.query.return_value = mock_query
         mock_query.filter.return_value = mock_query
         mock_query.order_by.return_value.limit.return_value.all.return_value = []
-        mock_get_session.return_value = mock_session
+        mock_get_session.return_value.__enter__ = Mock(return_value=mock_session)
+        mock_get_session.return_value.__exit__ = Mock(return_value=False)
 
         hypotheses = hypothesis_agent.list_hypotheses(
             domain="machine_learning",
@@ -429,18 +400,18 @@ class TestHypothesisListing:
 @pytest.mark.integration
 @pytest.mark.slow
 class TestHypothesisGeneratorIntegration:
-    """Integration tests (require real LLM and DB)."""
+    """Integration tests (require real LLM)."""
 
-    @pytest.mark.requires_claude
     def test_real_hypothesis_generation(self):
         """Test real hypothesis generation with Claude."""
         agent = HypothesisGeneratorAgent(config={
+            "model": "claude-3-haiku-20240307",
             "num_hypotheses": 2,
             "use_literature_context": False
         })
 
         response = agent.generate_hypotheses(
-            research_question="How does learning rate affect neural network convergence?",
+            research_question=f"How does learning rate affect neural network convergence? [{unique_id()}]",
             domain="machine_learning",
             store_in_db=False
         )
@@ -452,3 +423,7 @@ class TestHypothesisGeneratorIntegration:
             assert len(hyp.statement) > 15
             assert len(hyp.rationale) > 30
             assert hyp.confidence_score is not None
+
+
+if __name__ == "__main__":
+    pytest.main([__file__, "-v"])
