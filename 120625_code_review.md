@@ -24,7 +24,7 @@ This document provides a comprehensive analysis comparing the Kosmos codebase to
 
 ### Critical Observations
 
-1. **Paper claims NOT reproduced**: The system implements the architecture but has NOT replicated the paper's 79.4% accuracy or 7 validated discoveries
+1. **Paper claims NOT yet reproduced**: The system implements the architecture but has NOT yet replicated the paper's 79.4% accuracy or 7 validated discoveries
 2. **All 6 paper gaps resolved**: Context compression, state management, task generation, agent integration, execution environment, and discovery validation all implemented
 3. **December 2025 fixes complete**: Budget enforcement, error recovery, annotation storage, async LLM providers, and Neo4j E2E tests all implemented
 4. **Remaining blockers**: ArXiv Python 3.11+ incompatibility, Phase 4 production mode not implemented
@@ -479,7 +479,7 @@ All previously identified critical gaps have been resolved.
    - **Location**: `kosmos/literature/arxiv_http_client.py` (570 lines)
    - **Features**: Rate limiting, caching, full query syntax, automatic fallback
 
-2. **Paper Claims Not Reproduced**
+2. **Paper Claims Not Yet Reproduced**
    - **Severity**: High (for credibility)
    - **Impact**: Cannot claim same 79.4% accuracy
    - **Status**: Honest acknowledgment in README
@@ -547,7 +547,7 @@ All previously identified critical gaps have been resolved.
 | 42K lines of code | Architecture supports it | ✅ Yes |
 | 200 agent rollouts | Configurable | ✅ Yes |
 | 12-hour runs | Not validated | ⚠️ Unknown |
-| 7 discoveries | Not reproduced | ⚠️ Honest about this |
+| 7 discoveries | Not yet reproduced | ⚠️ Honest about this |
 
 ## Appendix B: File Change Summary Since Last Analysis
 

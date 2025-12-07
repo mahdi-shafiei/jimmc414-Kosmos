@@ -205,7 +205,7 @@ E2E tests skip based on environment:
 
 ### Paper Implementation
 
-This project implements the architecture from the Kosmos paper but **has not reproduced** the paper's claimed results:
+This project implements the architecture from the Kosmos paper but **has not yet reproduced** the paper's claimed results:
 
 | Paper Claim | Implementation Status |
 |-------------|----------------------|
@@ -227,7 +227,7 @@ The system is suitable for experimentation and further development. Before produ
 
 4. **Single-user**: No multi-tenancy or user isolation.
 
-5. **Not a reproduction study**: We have not reproduced the paper's 79.4% accuracy or 7 validated discoveries.
+5. **Not a reproduction study**: We have not yet reproduced the paper's 79.4% accuracy or 7 validated discoveries.
 
 ## Documentation
 
