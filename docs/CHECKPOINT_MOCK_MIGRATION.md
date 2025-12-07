@@ -2,6 +2,22 @@
 
 ## Date: 2025-12-07
 
+## Phase 2 Complete: Knowledge Layer Tests
+
+### Summary
+Converted 4 knowledge layer test files from mock-based to real services. All 57 tests pass.
+
+| File | Tests | Service |
+|------|-------|---------|
+| `tests/unit/knowledge/test_embeddings.py` | 13 | SentenceTransformer (SPECTER + MiniLM) |
+| `tests/unit/knowledge/test_concept_extractor.py` | 11 | Anthropic Haiku |
+| `tests/unit/knowledge/test_vector_db.py` | 16 | ChromaDB + SPECTER embeddings |
+| `tests/unit/knowledge/test_graph.py` | 17 | Neo4j |
+
+**Note**: CUDA OOM may occur when running all tests together (multiple SPECTER model instances). Run individually or in batches.
+
+---
+
 ## Phase 1 Complete: Core LLM Tests
 
 ### Summary

@@ -1,45 +1,53 @@
 """
 Tests for kosmos.knowledge.embeddings module.
+
+Tests using REAL SentenceTransformer embeddings (not mocks).
+Uses smaller model (all-MiniLM-L6-v2) for faster testing.
 """
 
 import pytest
 import numpy as np
-from unittest.mock import Mock, patch, MagicMock
+import uuid
 
 from kosmos.knowledge.embeddings import PaperEmbedder
 from kosmos.literature.base_client import PaperMetadata, PaperSource
 
 
+def unique_text(base: str) -> str:
+    """Add unique suffix to avoid cache hits."""
+    return f"{base} [test-id: {uuid.uuid4().hex[:8]}]"
+
+
 @pytest.fixture
 def paper_embedder():
-    """Create PaperEmbedder instance."""
-    with patch('kosmos.knowledge.embeddings.SentenceTransformer') as mock_st:
-        mock_st.return_value.get_sentence_embedding_dimension.return_value = 768
-        mock_st.return_value.device = "cpu"
-        embedder = PaperEmbedder(model_name="allenai/specter")
-        return embedder
+    """Create PaperEmbedder instance with real SentenceTransformer."""
+    # Use smaller model for faster tests
+    embedder = PaperEmbedder(model_name="all-MiniLM-L6-v2")
+    return embedder
+
+
+@pytest.fixture
+def specter_embedder():
+    """Create PaperEmbedder with SPECTER model."""
+    embedder = PaperEmbedder(model_name="allenai/specter")
+    return embedder
 
 
 @pytest.mark.unit
 class TestPaperEmbedderInit:
     """Test paper embedder initialization."""
 
-    @patch('kosmos.knowledge.embeddings.SentenceTransformer')
-    def test_init_default(self, mock_st):
+    def test_init_default(self):
         """Test default initialization."""
-        mock_st.return_value.get_sentence_embedding_dimension.return_value = 768
-        mock_st.return_value.device = "cpu"
         embedder = PaperEmbedder()
         assert embedder.model_name == "allenai/specter"
-        mock_st.assert_called_once()
+        assert embedder.model is not None
 
-    @patch('kosmos.knowledge.embeddings.SentenceTransformer')
-    def test_init_custom_model(self, mock_st):
+    def test_init_custom_model(self):
         """Test initialization with custom model."""
-        mock_st.return_value.get_sentence_embedding_dimension.return_value = 768
-        mock_st.return_value.device = "cpu"
-        embedder = PaperEmbedder(model_name="custom-model")
-        assert embedder.model_name == "custom-model"
+        embedder = PaperEmbedder(model_name="all-MiniLM-L6-v2")
+        assert embedder.model_name == "all-MiniLM-L6-v2"
+        assert embedder.model is not None
 
 
 @pytest.mark.unit
@@ -48,63 +56,55 @@ class TestEmbeddingGeneration:
 
     def test_embed_query(self, paper_embedder):
         """Test embedding a query."""
-        with patch.object(paper_embedder.model, 'encode') as mock_encode:
-            mock_encode.return_value = np.array([0.1, 0.2, 0.3])
+        embedding = paper_embedder.embed_query(unique_text("test query"))
 
-            embedding = paper_embedder.embed_query("test query")
-
-            assert isinstance(embedding, np.ndarray)
-            assert len(embedding) == 3
-            mock_encode.assert_called_once()
+        assert isinstance(embedding, np.ndarray)
+        assert len(embedding) == 384  # MiniLM dimension
+        assert embedding.dtype == np.float32 or embedding.dtype == np.float64
 
     def test_embed_paper(self, paper_embedder, sample_paper_metadata):
         """Test embedding a paper."""
-        with patch.object(paper_embedder.model, 'encode') as mock_encode:
-            mock_encode.return_value = np.array([0.1] * 768)
+        embedding = paper_embedder.embed_paper(sample_paper_metadata)
 
-            embedding = paper_embedder.embed_paper(sample_paper_metadata)
-
-            assert isinstance(embedding, np.ndarray)
-            assert len(embedding) == 768
-            # Should combine title and abstract
-            mock_encode.assert_called_once()
+        assert isinstance(embedding, np.ndarray)
+        assert len(embedding) == 384  # MiniLM dimension
 
     def test_embed_papers_batch(self, paper_embedder, sample_papers_list):
         """Test batch embedding of papers."""
-        with patch.object(paper_embedder.model, 'encode') as mock_encode:
-            mock_encode.return_value = np.array([[0.1] * 768] * len(sample_papers_list))
+        embeddings = paper_embedder.embed_papers(sample_papers_list)
 
-            embeddings = paper_embedder.embed_papers(sample_papers_list)
-
-            assert isinstance(embeddings, np.ndarray)
-            assert len(embeddings) == len(sample_papers_list)
+        assert isinstance(embeddings, np.ndarray)
+        assert len(embeddings) == len(sample_papers_list)
+        assert embeddings.shape[1] == 384  # MiniLM dimension
 
     def test_embed_empty_query(self, paper_embedder):
         """Test embedding empty query."""
-        with patch.object(paper_embedder.model, 'encode') as mock_encode:
-            mock_encode.return_value = np.array([0.0] * 768)
+        embedding = paper_embedder.embed_query("")
 
-            embedding = paper_embedder.embed_query("")
-
-            assert isinstance(embedding, np.ndarray)
+        assert isinstance(embedding, np.ndarray)
+        assert len(embedding) == 384
 
 
 @pytest.mark.unit
 class TestEmbeddingBehavior:
     """Test embedding behavior."""
 
-    def test_multiple_queries(self, paper_embedder):
-        """Test that multiple queries are handled correctly."""
-        with patch.object(paper_embedder.model, 'encode') as mock_encode:
-            mock_encode.return_value = np.array([0.1, 0.2, 0.3])
+    def test_multiple_queries_different_results(self, paper_embedder):
+        """Test that different queries produce different embeddings."""
+        emb1 = paper_embedder.embed_query(unique_text("machine learning"))
+        emb2 = paper_embedder.embed_query(unique_text("quantum physics"))
 
-            # Call multiple times
-            emb1 = paper_embedder.embed_query("query 1")
-            emb2 = paper_embedder.embed_query("query 2")
+        # Different queries should have different embeddings
+        assert not np.allclose(emb1, emb2)
 
-            # Should encode each query separately
-            assert mock_encode.call_count == 2
-            np.testing.assert_array_equal(emb1, emb2)  # Same mock return value
+    def test_similar_queries_similar_embeddings(self, paper_embedder):
+        """Test that similar queries produce similar embeddings."""
+        emb1 = paper_embedder.embed_query("neural network deep learning")
+        emb2 = paper_embedder.embed_query("deep learning neural network")
+
+        # Similar queries should have high cosine similarity
+        similarity = np.dot(emb1, emb2) / (np.linalg.norm(emb1) * np.linalg.norm(emb2))
+        assert similarity > 0.8  # High similarity
 
 
 @pytest.mark.unit
@@ -149,26 +149,20 @@ class TestEmbeddingSimilarity:
         assert similar[0][0] == 0
 
 
-@pytest.mark.integration
-@pytest.mark.slow
-class TestPaperEmbedderIntegration:
-    """Integration tests (requires model download)."""
+@pytest.mark.unit
+class TestSpecterModel:
+    """Test SPECTER model specifically."""
 
-    def test_real_embedding_generation(self):
-        """Test real embedding generation with SPECTER."""
-        embedder = PaperEmbedder()
-
-        query = "Machine learning is a field of artificial intelligence."
-        embedding = embedder.embed_query(query)
+    def test_specter_embedding_dimension(self, specter_embedder):
+        """Test SPECTER embedding dimension is 768."""
+        embedding = specter_embedder.embed_query("test query")
 
         assert isinstance(embedding, np.ndarray)
-        assert len(embedding) == 768  # SPECTER embedding dimension
+        assert len(embedding) == 768  # SPECTER dimension
 
-    def test_real_paper_embedding(self, sample_paper_metadata):
-        """Test real paper embedding."""
-        embedder = PaperEmbedder()
-
-        embedding = embedder.embed_paper(sample_paper_metadata)
+    def test_specter_paper_embedding(self, specter_embedder, sample_paper_metadata):
+        """Test SPECTER paper embedding."""
+        embedding = specter_embedder.embed_paper(sample_paper_metadata)
 
         assert isinstance(embedding, np.ndarray)
         assert len(embedding) == 768

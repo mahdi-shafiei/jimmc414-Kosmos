@@ -5,23 +5,28 @@ Converting mock-based tests to real LLM API calls for production readiness.
 
 ## Completed
 - **Phase 1: Core LLM tests** - 43 tests pass with real APIs
+- **Phase 2: Knowledge Layer tests** - 57 tests pass with real services
 
 ## Current Status
-Ready to continue with ALL tests. Semantic Scholar API works unauthenticated (lower rate limits).
+Ready to continue with Phase 3: Agent tests.
+- ANTHROPIC_API_KEY: Configured
+- SEMANTIC_SCHOLAR_API_KEY: Configured (rate limit: 1 req/sec)
+- Neo4j: Running (kosmos-neo4j)
+- ChromaDB: Available
 
-## Resume Task: Phase 2 - Knowledge Layer
+## Resume Task: Phase 3 - Agents
 
 ### Files to Convert
-1. `tests/unit/knowledge/test_embeddings.py` - SentenceTransformer
-2. `tests/unit/knowledge/test_concept_extractor.py` - Claude API
-3. `tests/unit/knowledge/test_vector_db.py` - ChromaDB
-4. `tests/unit/knowledge/test_graph.py` - Neo4j
-
-### Then Phase 3 - Agents
 1. `tests/unit/agents/test_research_director.py` - Claude API
 2. `tests/unit/agents/test_literature_analyzer.py` - Claude API + Neo4j
 3. `tests/unit/agents/test_data_analyst.py` - Claude API
-4. `tests/unit/agents/test_hypothesis_generator.py` - Claude + Semantic Scholar (unauthenticated OK)
+4. `tests/unit/agents/test_hypothesis_generator.py` - Claude + Semantic Scholar
+
+### Then Phase 4 - Integration
+1. `tests/integration/test_analysis_pipeline.py`
+2. `tests/integration/test_phase2_e2e.py`
+3. `tests/integration/test_phase3_e2e.py`
+4. `tests/integration/test_concurrent_research.py`
 
 ### Pattern
 ```python
