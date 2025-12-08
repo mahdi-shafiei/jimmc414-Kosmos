@@ -25,7 +25,9 @@ The system runs autonomous research cycles, generating tasks, executing analyses
 
 - Python 3.11+
 - Anthropic API key or OpenAI API key
-- Docker (optional, for sandboxed code execution)
+- Docker (recommended for code execution)
+
+Without Docker, code runs via `exec()` with static validation. See "Code Execution Security" below.
 
 ### Installation
 
@@ -69,10 +71,16 @@ asyncio.run(run())
 
 ```bash
 # Run research with default settings
-kosmos run --objective "Your research question"
+kosmos run "What metabolic pathways differ between cancer and normal cells?" --domain biology
 
-# Enable trace logging (maximum verbosity)
-kosmos run --trace --objective "Your research question"
+# With budget limit
+kosmos run "How do perovskites optimize efficiency?" --domain materials --budget 50
+
+# Interactive mode (recommended for first time)
+kosmos run --interactive
+
+# Maximum verbosity
+kosmos run "Your question" --domain biology --trace
 
 # Show system information
 kosmos info
@@ -91,12 +99,28 @@ kosmos doctor
 | Literature Search | ArXiv, PubMed, Semantic Scholar integration | Complete |
 | Code Execution | Docker-sandboxed Jupyter notebooks | Complete |
 | Knowledge Graph | Neo4j-based relationship storage (optional) | Complete |
-| Context Compression | 20:1 hierarchical compression for large contexts | Complete |
+| Context Compression | Query-based hierarchical compression (20:1 ratio) | Complete |
 | Discovery Validation | 8-dimension ScholarEval quality framework | Complete |
 | Multi-Provider LLM | Anthropic, OpenAI, LiteLLM (100+ providers) | Complete |
 | Budget Enforcement | Cost tracking with configurable limits and enforcement | Complete |
 | Error Recovery | Exponential backoff with circuit breaker | Complete |
 | Debug Mode | 4-level verbosity with stage tracking | Complete |
+
+### Code Execution Security
+
+AI-generated code runs in isolated Docker containers:
+
+| Layer | Implementation |
+|-------|---------------|
+| Container Isolation | `--cap-drop=ALL`, no privileged access |
+| Network | Disabled (`--network=none`) |
+| Filesystem | Read-only root, tmpfs for scratch |
+| Resources | CPU: 2 cores, Memory: 2GB, Timeout: 300s |
+| Pooling | Pre-warmed containers reduce cold start |
+
+See: `kosmos/execution/sandbox.py`, `docker_manager.py`
+
+Without Docker, falls back to `CodeValidator` static analysis + `exec()`. Not recommended for untrusted inputs.
 
 ### Agent Architecture
 
@@ -108,6 +132,21 @@ kosmos doctor
 | Data Analyst | Analyzes results and interprets findings |
 | Literature Analyzer | Searches and synthesizes papers |
 | Plan Creator/Reviewer | Strategic task generation with 70/30 exploration/exploitation |
+
+### How Context Compression Works
+
+The system processes literature in batches, not bulk:
+
+1. **Relevance Sorting**: Papers ranked by query relevance before processing
+2. **Batch Size**: Top 10 papers per batch
+3. **Statistics Extraction**: Regex-based extraction of p-values, sample sizes, effect sizes
+4. **Tiered Summarization**:
+   - Task: 42K lines code to 2-line summary + extracted stats
+   - Cycle: 10 task summaries to cycle overview
+   - Synthesis: 20 cycles to final narrative
+   - Detail: Full content lazy-loaded when needed
+
+Effective ratio: ~20:1. See `kosmos/compression/compressor.py`.
 
 ## Configuration
 
@@ -138,6 +177,18 @@ BUDGET_LIMIT_USD=10.00
 ```
 
 Budget enforcement raises `BudgetExceededError` when the limit is reached, gracefully transitioning the research to completion.
+
+### Concurrency
+
+Three independent limits in `kosmos/config.py`:
+
+| Setting | Default | Range |
+|---------|---------|-------|
+| `max_parallel_hypotheses` | 3 | 1-10 |
+| `max_concurrent_experiments` | 4 | 1-16 |
+| `max_concurrent_llm_calls` | 5 | 1-20 |
+
+The paper describes 10 parallel tasks. Current default is 4; increase `max_concurrent_experiments` to match.
 
 ### Optional Services
 
@@ -189,7 +240,7 @@ DEBUG_MODE=true
 DEBUG_LEVEL=2
 
 # Or use CLI flag for maximum verbosity
-kosmos run --trace --objective "..."
+kosmos run "Your research question" --trace
 ```
 
 See [docs/DEBUG_MODE.md](docs/DEBUG_MODE.md) for comprehensive debug documentation.
@@ -220,6 +271,16 @@ kosmos/
 | Production-ready | 90% | Core research loop, agents, LLM providers, validation |
 | Deferred | 5% | Phase 4 production mode (polyglot persistence) |
 | Known issues | 5% | R language not supported (Python only) |
+
+### Open Issues
+
+| Issue | Impact |
+|-------|--------|
+| [#66](https://github.com/jimmc414/Kosmos/issues/66) | CLI hangs on startup |
+| [#67](https://github.com/jimmc414/Kosmos/issues/67) | SkillLoader not loading domain skills |
+| [#68](https://github.com/jimmc414/Kosmos/issues/68) | Pydantic V2 migration incomplete |
+
+Full tracking: [PAPER_IMPLEMENTATION_GAPS.md](docs/PAPER_IMPLEMENTATION_GAPS.md) (17 gaps identified)
 
 ### Test Coverage
 
@@ -281,7 +342,7 @@ The original paper omitted implementation details for 6 critical components. Thi
 | 0 | Context compression for 1,500 papers | Hierarchical 3-tier compression (20:1 ratio) |
 | 1 | State Manager schema unspecified | 4-layer hybrid architecture (JSON + Neo4j + Vector + Citations) |
 | 2 | Task generation algorithm unstated | Plan Creator + Plan Reviewer pattern |
-| 3 | Agent integration mechanism unclear | Skill loader with 566 domain-specific prompts |
+| 3 | Agent integration mechanism unclear | Skill loader with 116 domain-specific skills (see [#67](https://github.com/jimmc414/Kosmos/issues/67)) |
 | 4 | Execution environment not described | Docker-based Jupyter sandbox with pooling |
 | 5 | Discovery validation criteria missing | ScholarEval 8-dimension quality framework |
 
