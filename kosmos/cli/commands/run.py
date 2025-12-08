@@ -2,11 +2,17 @@
 Run command for Kosmos CLI.
 
 Executes autonomous research with live progress visualization.
+
+Async Architecture (Issue #66 fix):
+- run_with_progress() is now async
+- Uses asyncio.run() at CLI entry point
+- ResearchDirector.execute() is now async
 """
 
 import sys
 import time
 import logging
+import asyncio
 from typing import Optional
 from datetime import datetime
 from pathlib import Path
@@ -153,8 +159,14 @@ def run_research(
             config=flat_config
         )
 
-        # Run research with live progress
-        results = run_with_progress(director, question, max_iterations)
+        # Register director with AgentRegistry for message routing (Issue #66 fix)
+        from kosmos.agents.registry import get_registry
+        registry = get_registry()
+        registry.register(director)
+        logger.info(f"Registered ResearchDirector with AgentRegistry")
+
+        # Run research with live progress (async)
+        results = asyncio.run(run_with_progress_async(director, question, max_iterations))
 
         # Display results
         viewer = ResultsViewer()
@@ -187,9 +199,9 @@ def run_research(
         raise typer.Exit(1)
 
 
-def run_with_progress(director, question: str, max_iterations: int) -> dict:
+async def run_with_progress_async(director, question: str, max_iterations: int) -> dict:
     """
-    Run research with live progress display.
+    Run research with live progress display asynchronously.
 
     Args:
         director: ResearchDirectorAgent instance
@@ -235,8 +247,8 @@ def run_with_progress(director, question: str, max_iterations: int) -> dict:
     # Run with live display
     with Live(progress, console=console, refresh_per_second=4):
         try:
-            # Start research
-            director.execute({"action": "start_research"})
+            # Start research (async)
+            await director.execute({"action": "start_research"})
 
             # Research loop - execute until convergence or max iterations
             iteration = 0
@@ -307,9 +319,9 @@ def run_with_progress(director, question: str, max_iterations: int) -> dict:
                     progress.update(iteration_task, completed=max_iterations)
                     break
 
-                # Execute next research step
+                # Execute next research step (async)
                 logger.debug("Executing next research step")
-                director.execute({"action": "step"})
+                await director.execute({"action": "step"})
 
                 # Update iteration counter from status
                 new_iteration = status.get("iteration", iteration)
@@ -328,8 +340,8 @@ def run_with_progress(director, question: str, max_iterations: int) -> dict:
                     loop_duration
                 )
 
-                # Small delay to allow UI updates
-                time.sleep(0.05)
+                # Small delay to allow UI updates (async)
+                await asyncio.sleep(0.05)
 
             logger.info(f"Research loop completed after {iteration} iterations")
 

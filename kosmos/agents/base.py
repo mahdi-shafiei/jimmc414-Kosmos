@@ -2,15 +2,21 @@
 Base agent class and communication protocol.
 
 All agents (HypothesisGenerator, ExperimentDesigner, DataAnalyst, etc.) inherit from this base.
+
+Async Architecture (Issue #66 fix):
+- send_message(), receive_message(), process_message() are now async
+- Uses asyncio.Queue for message queue
+- Sync wrappers provided for backwards compatibility
 """
 
-from typing import Dict, Any, Optional, List, Callable
+from typing import Dict, Any, Optional, List, Callable, Awaitable, Union
 from enum import Enum
 from datetime import datetime
 from pydantic import BaseModel, Field
 import logging
 import uuid
 import json
+import asyncio
 
 
 logger = logging.getLogger(__name__)
@@ -126,10 +132,14 @@ class BaseAgent:
         self.created_at = datetime.utcnow()
         self.updated_at = datetime.utcnow()
 
-        # Message handling
-        self.message_queue: List[AgentMessage] = []
+        # Message handling - async queue for proper async processing
+        self.message_queue: List[AgentMessage] = []  # Legacy sync queue (for compatibility)
+        self._async_message_queue: asyncio.Queue[AgentMessage] = asyncio.Queue()
         self.message_handlers: Dict[str, Callable] = {}
-        self._message_router: Optional[Callable[[AgentMessage], None]] = None
+        # Message router can be sync or async callable
+        self._message_router: Optional[
+            Union[Callable[[AgentMessage], None], Callable[[AgentMessage], Awaitable[None]]]
+        ] = None
 
         # State management
         self.state_data: Dict[str, Any] = {}
@@ -233,7 +243,7 @@ class BaseAgent:
     # MESSAGE PASSING
     # ========================================================================
 
-    def send_message(
+    async def send_message(
         self,
         to_agent: str,
         content: Dict[str, Any],
@@ -241,7 +251,7 @@ class BaseAgent:
         correlation_id: Optional[str] = None
     ) -> AgentMessage:
         """
-        Send message to another agent.
+        Send message to another agent asynchronously.
 
         Args:
             to_agent: Target agent ID
@@ -279,22 +289,53 @@ class BaseAgent:
         # Use message router if available to actually deliver the message
         if self._message_router is not None:
             try:
-                self._message_router(message)
+                # Handle both sync and async routers
+                result = self._message_router(message)
+                if asyncio.iscoroutine(result):
+                    await result
                 logger.debug(f"Message routed from {self.agent_id} to {to_agent}")
             except Exception as e:
                 logger.error(f"Failed to route message from {self.agent_id} to {to_agent}: {e}")
 
         return message
 
-    def receive_message(self, message: AgentMessage):
+    def send_message_sync(
+        self,
+        to_agent: str,
+        content: Dict[str, Any],
+        message_type: MessageType = MessageType.REQUEST,
+        correlation_id: Optional[str] = None
+    ) -> AgentMessage:
         """
-        Receive message from another agent.
+        Synchronous wrapper for send_message (backwards compatibility).
+
+        Use this when calling from synchronous code that cannot be converted to async.
+        """
+        try:
+            loop = asyncio.get_running_loop()
+            # We're in an async context, use run_coroutine_threadsafe
+            import concurrent.futures
+            future = asyncio.run_coroutine_threadsafe(
+                self.send_message(to_agent, content, message_type, correlation_id),
+                loop
+            )
+            return future.result(timeout=30)
+        except RuntimeError:
+            # No running loop, create one
+            return asyncio.run(
+                self.send_message(to_agent, content, message_type, correlation_id)
+            )
+
+    async def receive_message(self, message: AgentMessage):
+        """
+        Receive message from another agent asynchronously.
 
         Args:
             message: Incoming message
         """
         self.messages_received += 1
-        self.message_queue.append(message)
+        self.message_queue.append(message)  # Legacy sync queue
+        await self._async_message_queue.put(message)  # Async queue
 
         # Log received message if enabled
         try:
@@ -312,22 +353,35 @@ class BaseAgent:
 
         # Process message
         try:
-            self.process_message(message)
+            await self.process_message(message)
         except Exception as e:
             self.errors_encountered += 1
             logger.error(f"Error processing message in {self.agent_id}: {e}")
             # Send error response
             if message.type == MessageType.REQUEST:
-                error_msg = self.send_message(
+                await self.send_message(
                     to_agent=message.from_agent,
                     content={"error": str(e)},
                     message_type=MessageType.ERROR,
                     correlation_id=message.id
                 )
 
-    def process_message(self, message: AgentMessage):
+    def receive_message_sync(self, message: AgentMessage):
         """
-        Process incoming message.
+        Synchronous wrapper for receive_message (backwards compatibility).
+        """
+        try:
+            loop = asyncio.get_running_loop()
+            future = asyncio.run_coroutine_threadsafe(
+                self.receive_message(message), loop
+            )
+            return future.result(timeout=30)
+        except RuntimeError:
+            return asyncio.run(self.receive_message(message))
+
+    async def process_message(self, message: AgentMessage):
+        """
+        Process incoming message asynchronously.
 
         Subclasses should override this to implement message handling logic.
 
@@ -335,6 +389,19 @@ class BaseAgent:
             message: Message to process
         """
         logger.warning(f"Agent {self.agent_id} received message but process_message() not implemented")
+
+    def process_message_sync(self, message: AgentMessage):
+        """
+        Synchronous wrapper for process_message (backwards compatibility).
+        """
+        try:
+            loop = asyncio.get_running_loop()
+            future = asyncio.run_coroutine_threadsafe(
+                self.process_message(message), loop
+            )
+            return future.result(timeout=30)
+        except RuntimeError:
+            return asyncio.run(self.process_message(message))
 
     def register_message_handler(self, message_type: str, handler: Callable):
         """
@@ -347,7 +414,10 @@ class BaseAgent:
         self.message_handlers[message_type] = handler
         logger.debug(f"Registered handler for {message_type} in agent {self.agent_id}")
 
-    def set_message_router(self, router: Callable[[AgentMessage], None]):
+    def set_message_router(
+        self,
+        router: Union[Callable[[AgentMessage], None], Callable[[AgentMessage], Awaitable[None]]]
+    ):
         """
         Set the message router callback for delivering messages.
 
@@ -356,7 +426,8 @@ class BaseAgent:
         through a central registry or message broker.
 
         Args:
-            router: Callable that takes an AgentMessage and delivers it
+            router: Callable that takes an AgentMessage and delivers it.
+                   Can be sync or async - async routers will be awaited.
         """
         self._message_router = router
         logger.debug(f"Message router set for agent {self.agent_id}")

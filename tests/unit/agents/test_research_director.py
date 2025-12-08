@@ -373,13 +373,14 @@ class TestMessageHandling:
 
 @pytest.mark.unit
 class TestMessageSending:
-    """Test sending messages to other agents."""
+    """Test sending messages to other agents (async methods)."""
 
-    def test_send_to_hypothesis_generator(self, research_director):
+    @pytest.mark.asyncio
+    async def test_send_to_hypothesis_generator(self, research_director):
         """Test sending message to hypothesis generator."""
         research_director.register_agent("HypothesisGeneratorAgent", "hyp-gen-1")
 
-        message = research_director._send_to_hypothesis_generator(
+        message = await research_director._send_to_hypothesis_generator(
             action="generate",
             context={"max_hypotheses": 5}
         )
@@ -389,11 +390,12 @@ class TestMessageSending:
         assert message.content["action"] == "generate"
         assert message.content["research_question"] == research_director.research_question
 
-    def test_send_to_experiment_designer(self, research_director):
+    @pytest.mark.asyncio
+    async def test_send_to_experiment_designer(self, research_director):
         """Test sending message to experiment designer."""
         research_director.register_agent("ExperimentDesignerAgent", "exp-des-1")
 
-        message = research_director._send_to_experiment_designer(
+        message = await research_director._send_to_experiment_designer(
             hypothesis_id="hyp-1"
         )
 
@@ -402,11 +404,12 @@ class TestMessageSending:
         assert message.content["action"] == "design_experiment"
         assert message.content["hypothesis_id"] == "hyp-1"
 
-    def test_send_to_executor(self, research_director):
+    @pytest.mark.asyncio
+    async def test_send_to_executor(self, research_director):
         """Test sending message to executor."""
         research_director.register_agent("Executor", "executor-1")
 
-        message = research_director._send_to_executor(
+        message = await research_director._send_to_executor(
             protocol_id="proto-1"
         )
 
@@ -415,11 +418,12 @@ class TestMessageSending:
         assert message.content["action"] == "execute_experiment"
         assert message.content["protocol_id"] == "proto-1"
 
-    def test_send_to_data_analyst(self, research_director):
+    @pytest.mark.asyncio
+    async def test_send_to_data_analyst(self, research_director):
         """Test sending message to data analyst."""
         research_director.register_agent("DataAnalystAgent", "analyst-1")
 
-        message = research_director._send_to_data_analyst(
+        message = await research_director._send_to_data_analyst(
             result_id="result-1",
             hypothesis_id="hyp-1"
         )
@@ -609,34 +613,39 @@ class TestAgentRegistry:
 
 @pytest.mark.unit
 class TestExecute:
-    """Test execute method (BaseAgent interface)."""
+    """Test execute method (BaseAgent interface) - now async."""
 
-    def test_execute_start_research(self, research_director):
+    @pytest.mark.asyncio
+    async def test_execute_start_research(self, research_director):
         """Test executing start_research action with real Claude."""
-        research_director._execute_next_action = Mock()
+        from unittest.mock import AsyncMock
+        research_director._execute_next_action = AsyncMock()
 
-        result = research_director.execute({"action": "start_research"})
+        result = await research_director.execute({"action": "start_research"})
 
         assert result["status"] == "research_started"
         assert "research_plan" in result
         assert "next_action" in result
         assert research_director.status == AgentStatus.RUNNING
 
-    def test_execute_step(self, research_director):
+    @pytest.mark.asyncio
+    async def test_execute_step(self, research_director):
         """Test executing a single step."""
         research_director.start()
-        research_director._execute_next_action = Mock()
+        from unittest.mock import AsyncMock
+        research_director._execute_next_action = AsyncMock()
 
-        result = research_director.execute({"action": "step"})
+        result = await research_director.execute({"action": "step"})
 
         assert result["status"] == "step_executed"
         assert "next_action" in result
         assert "workflow_state" in result
 
-    def test_execute_unknown_action(self, research_director):
+    @pytest.mark.asyncio
+    async def test_execute_unknown_action(self, research_director):
         """Test executing unknown action."""
         with pytest.raises(ValueError, match="Unknown action"):
-            research_director.execute({"action": "unknown"})
+            await research_director.execute({"action": "unknown"})
 
 
 # Test Status & Reporting

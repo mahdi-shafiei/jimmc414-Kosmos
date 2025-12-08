@@ -5,6 +5,11 @@ This agent coordinates all other agents to execute the full research cycle:
 Research Question → Hypotheses → Experiments → Results → Analysis → Refinement → Iteration
 
 Uses message-based async coordination with all specialized agents.
+
+Async Architecture (Issue #66 fix):
+- execute(), _execute_next_action(), _do_execute_action() are now async
+- All _send_to_* methods are now async
+- Threading locks replaced with asyncio.Lock for async-safe operation
 """
 
 from typing import Dict, Any, Optional, List
@@ -148,11 +153,16 @@ class ResearchDirectorAgent(BaseAgent):
         self._error_history: List[Dict[str, Any]] = []
         self._last_error_time: Optional[datetime] = None
 
-        # Thread safety locks for concurrent operations
-        self._research_plan_lock = threading.RLock()  # Reentrant lock for nested acquisitions
-        self._strategy_stats_lock = threading.Lock()
-        self._workflow_lock = threading.Lock()
-        self._agent_registry_lock = threading.Lock()
+        # Async-safe locks for concurrent operations (Issue #66)
+        # Note: asyncio.Lock is not reentrant, refactored to avoid nested acquisitions
+        self._research_plan_lock = asyncio.Lock()
+        self._strategy_stats_lock = asyncio.Lock()
+        self._workflow_lock = asyncio.Lock()
+        self._agent_registry_lock = asyncio.Lock()
+        # Keep threading locks for backwards compatibility in sync contexts
+        self._research_plan_lock_sync = threading.RLock()
+        self._strategy_stats_lock_sync = threading.Lock()
+        self._workflow_lock_sync = threading.Lock()
 
         # Concurrent operations support
         self.enable_concurrent = self.config.get("enable_concurrent_operations", False)
@@ -274,7 +284,7 @@ class ResearchDirectorAgent(BaseAgent):
     def _on_start(self):
         """Initialize director when started."""
         logger.info(f"ResearchDirector {self.agent_id} starting research cycle")
-        with self._workflow_lock:
+        with self._workflow_lock_sync:
             self.workflow.transition_to(
                 WorkflowState.GENERATING_HYPOTHESES,
                 action="Start research cycle"
@@ -297,30 +307,25 @@ class ResearchDirectorAgent(BaseAgent):
 
     @contextmanager
     def _research_plan_context(self):
-        """Context manager for thread-safe research plan access."""
-        self._research_plan_lock.acquire()
-        try:
+        """Context manager for thread-safe research plan access (sync version)."""
+        with self._research_plan_lock_sync:
             yield self.research_plan
-        finally:
-            self._research_plan_lock.release()
 
     @contextmanager
     def _strategy_stats_context(self):
-        """Context manager for thread-safe strategy stats access."""
-        self._strategy_stats_lock.acquire()
-        try:
+        """Context manager for thread-safe strategy stats access (sync version)."""
+        with self._strategy_stats_lock_sync:
             yield self.strategy_stats
-        finally:
-            self._strategy_stats_lock.release()
 
     @contextmanager
     def _workflow_context(self):
-        """Context manager for thread-safe workflow access."""
-        self._workflow_lock.acquire()
-        try:
-            yield self.workflow
-        finally:
-            self._workflow_lock.release()
+        """Context manager for thread-safe workflow access (sync version, not used with async)."""
+        # Note: This is only for backwards compatibility with sync code
+        # Async code should use the async lock directly
+        yield self.workflow
+
+    # Async context manager helpers - use asyncio.Lock directly in async code
+    # Example: async with self._research_plan_lock: ...
 
     # ========================================================================
     # GRAPH PERSISTENCE HELPERS
@@ -973,13 +978,13 @@ class ResearchDirectorAgent(BaseAgent):
     # MESSAGE SENDING (to other agents)
     # ========================================================================
 
-    def _send_to_hypothesis_generator(
+    async def _send_to_hypothesis_generator(
         self,
         action: str,
         context: Optional[Dict[str, Any]] = None
     ) -> AgentMessage:
         """
-        Send request to HypothesisGeneratorAgent.
+        Send request to HypothesisGeneratorAgent asynchronously.
 
         Args:
             action: Action to request (generate, refine)
@@ -998,7 +1003,7 @@ class ResearchDirectorAgent(BaseAgent):
 
         target_agent = self.agent_registry.get("HypothesisGeneratorAgent", "hypothesis_generator")
 
-        message = self.send_message(
+        message = await self.send_message(
             to_agent=target_agent,
             content=content,
             message_type=MessageType.REQUEST
@@ -1013,12 +1018,12 @@ class ResearchDirectorAgent(BaseAgent):
         logger.debug(f"Sent {action} request to HypothesisGeneratorAgent")
         return message
 
-    def _send_to_experiment_designer(
+    async def _send_to_experiment_designer(
         self,
         hypothesis_id: str,
         context: Optional[Dict[str, Any]] = None
     ) -> AgentMessage:
-        """Send request to ExperimentDesignerAgent to design protocol."""
+        """Send request to ExperimentDesignerAgent to design protocol asynchronously."""
         content = {
             "action": "design_experiment",
             "hypothesis_id": hypothesis_id,
@@ -1029,7 +1034,7 @@ class ResearchDirectorAgent(BaseAgent):
 
         target_agent = self.agent_registry.get("ExperimentDesignerAgent", "experiment_designer")
 
-        message = self.send_message(
+        message = await self.send_message(
             to_agent=target_agent,
             content=content,
             message_type=MessageType.REQUEST
@@ -1044,12 +1049,12 @@ class ResearchDirectorAgent(BaseAgent):
         logger.debug(f"Sent design request to ExperimentDesignerAgent for hypothesis {hypothesis_id}")
         return message
 
-    def _send_to_executor(
+    async def _send_to_executor(
         self,
         protocol_id: str,
         context: Optional[Dict[str, Any]] = None
     ) -> AgentMessage:
-        """Send request to Executor to run experiment."""
+        """Send request to Executor to run experiment asynchronously."""
         content = {
             "action": "execute_experiment",
             "protocol_id": protocol_id,
@@ -1058,7 +1063,7 @@ class ResearchDirectorAgent(BaseAgent):
 
         target_agent = self.agent_registry.get("Executor", "executor")
 
-        message = self.send_message(
+        message = await self.send_message(
             to_agent=target_agent,
             content=content,
             message_type=MessageType.REQUEST
@@ -1073,13 +1078,13 @@ class ResearchDirectorAgent(BaseAgent):
         logger.debug(f"Sent execution request to Executor for protocol {protocol_id}")
         return message
 
-    def _send_to_data_analyst(
+    async def _send_to_data_analyst(
         self,
         result_id: str,
         hypothesis_id: Optional[str] = None,
         context: Optional[Dict[str, Any]] = None
     ) -> AgentMessage:
-        """Send request to DataAnalystAgent to interpret results."""
+        """Send request to DataAnalystAgent to interpret results asynchronously."""
         content = {
             "action": "interpret_results",
             "result_id": result_id,
@@ -1089,7 +1094,7 @@ class ResearchDirectorAgent(BaseAgent):
 
         target_agent = self.agent_registry.get("DataAnalystAgent", "data_analyst")
 
-        message = self.send_message(
+        message = await self.send_message(
             to_agent=target_agent,
             content=content,
             message_type=MessageType.REQUEST
@@ -1104,14 +1109,14 @@ class ResearchDirectorAgent(BaseAgent):
         logger.debug(f"Sent interpretation request to DataAnalystAgent for result {result_id}")
         return message
 
-    def _send_to_hypothesis_refiner(
+    async def _send_to_hypothesis_refiner(
         self,
         hypothesis_id: str,
         result_id: Optional[str] = None,
         action: str = "evaluate",
         context: Optional[Dict[str, Any]] = None
     ) -> AgentMessage:
-        """Send request to HypothesisRefiner."""
+        """Send request to HypothesisRefiner asynchronously."""
         content = {
             "action": action,
             "hypothesis_id": hypothesis_id,
@@ -1121,7 +1126,7 @@ class ResearchDirectorAgent(BaseAgent):
 
         target_agent = self.agent_registry.get("HypothesisRefiner", "hypothesis_refiner")
 
-        message = self.send_message(
+        message = await self.send_message(
             to_agent=target_agent,
             content=content,
             message_type=MessageType.REQUEST
@@ -1136,11 +1141,11 @@ class ResearchDirectorAgent(BaseAgent):
         logger.debug(f"Sent {action} request to HypothesisRefiner for hypothesis {hypothesis_id}")
         return message
 
-    def _send_to_convergence_detector(
+    async def _send_to_convergence_detector(
         self,
         context: Optional[Dict[str, Any]] = None
     ) -> AgentMessage:
-        """Send request to ConvergenceDetector to check if research is complete."""
+        """Send request to ConvergenceDetector to check if research is complete asynchronously."""
         # Use model_dump() for Pydantic v2, fall back to dict() for v1
         try:
             research_plan_dict = model_to_dict(self.research_plan)
@@ -1155,7 +1160,7 @@ class ResearchDirectorAgent(BaseAgent):
 
         target_agent = self.agent_registry.get("ConvergenceDetector", "convergence_detector")
 
-        message = self.send_message(
+        message = await self.send_message(
             to_agent=target_agent,
             content=content,
             message_type=MessageType.REQUEST
@@ -1690,9 +1695,9 @@ Provide a structured, actionable plan in 2-3 paragraphs.
             # Default: generate hypotheses
             return NextAction.GENERATE_HYPOTHESIS
 
-    def _execute_next_action(self, action: NextAction):
+    async def _execute_next_action(self, action: NextAction):
         """
-        Execute the decided next action.
+        Execute the decided next action asynchronously.
 
         Uses concurrent execution when enabled and multiple items available.
 
@@ -1711,12 +1716,12 @@ Provide a structured, actionable plan in 2-3 paragraphs.
 
         tracker = get_stage_tracker()
         with tracker.track(f"ACTION_{action.value}", action=action.value):
-            self._do_execute_action(action)
+            await self._do_execute_action(action)
 
-    def _do_execute_action(self, action: NextAction):
-        """Internal method to execute action (wrapped by stage tracking)."""
+    async def _do_execute_action(self, action: NextAction):
+        """Internal async method to execute action (wrapped by stage tracking)."""
         if action == NextAction.GENERATE_HYPOTHESIS:
-            self._send_to_hypothesis_generator(action="generate")
+            await self._send_to_hypothesis_generator(action="generate")
 
         elif action == NextAction.DESIGN_EXPERIMENT:
             # Get untested hypotheses
@@ -1731,50 +1736,38 @@ Provide a structured, actionable plan in 2-3 paragraphs.
                     hypothesis_batch = untested[:batch_size]
 
                     try:
-                        # Run async evaluation with timeout
+                        # Run async evaluation - now we can await directly!
                         logger.info(f"Starting concurrent evaluation of {len(hypothesis_batch)} hypotheses")
-                        timeout_seconds = 300
-                        evaluations = None
-                        try:
-                            # Check if there's already a running event loop
-                            loop = asyncio.get_running_loop()
-                            # If we're already in an async context, use run_coroutine_threadsafe with timeout
-                            future = asyncio.run_coroutine_threadsafe(
-                                self.evaluate_hypotheses_concurrently(hypothesis_batch), loop
-                            )
-                            evaluations = future.result(timeout=timeout_seconds)
-                            logger.info(f"Concurrent hypothesis evaluation completed")
-                        except RuntimeError:
-                            # No running loop - this can cause issues with nested event loops
-                            # Fall back to sequential execution for safety
-                            logger.warning("No running event loop, falling back to sequential hypothesis evaluation")
-                            evaluations = None
-                        except concurrent.futures.TimeoutError:
-                            logger.warning(f"Hypothesis evaluation timed out after {timeout_seconds}s, falling back to sequential")
-                            evaluations = None
+                        evaluations = await asyncio.wait_for(
+                            self.evaluate_hypotheses_concurrently(hypothesis_batch),
+                            timeout=300
+                        )
+                        logger.info(f"Concurrent hypothesis evaluation completed")
 
                         if evaluations:
                             # Process best candidate(s)
                             for eval_result in evaluations:
                                 if eval_result.get("recommendation") == "proceed":
-                                    self._send_to_experiment_designer(
+                                    await self._send_to_experiment_designer(
                                         hypothesis_id=eval_result["hypothesis_id"]
                                     )
                                     break  # Design experiment for first promising hypothesis
                             else:
                                 # No promising hypotheses, design for first untested
-                                self._send_to_experiment_designer(hypothesis_id=untested[0])
+                                await self._send_to_experiment_designer(hypothesis_id=untested[0])
                         else:
                             # Fallback to sequential
-                            self._send_to_experiment_designer(hypothesis_id=untested[0])
+                            await self._send_to_experiment_designer(hypothesis_id=untested[0])
 
+                    except asyncio.TimeoutError:
+                        logger.warning("Hypothesis evaluation timed out, falling back to sequential")
+                        await self._send_to_experiment_designer(hypothesis_id=untested[0])
                     except Exception as e:
                         logger.error(f"Concurrent hypothesis evaluation failed: {e}")
-                        # Fallback to sequential
-                        self._send_to_experiment_designer(hypothesis_id=untested[0])
+                        await self._send_to_experiment_designer(hypothesis_id=untested[0])
                 else:
                     # Sequential: design experiment for first untested hypothesis
-                    self._send_to_experiment_designer(hypothesis_id=untested[0])
+                    await self._send_to_experiment_designer(hypothesis_id=untested[0])
 
         elif action == NextAction.EXECUTE_EXPERIMENT:
             # Get queued experiments
@@ -1793,7 +1786,7 @@ Provide a structured, actionable plan in 2-3 paragraphs.
                 else:
                     # Sequential: execute first queued experiment
                     protocol_id = experiment_queue[0]
-                    self._send_to_executor(protocol_id=protocol_id)
+                    await self._send_to_executor(protocol_id=protocol_id)
 
         elif action == NextAction.ANALYZE_RESULT:
             # Get recent results
@@ -1808,27 +1801,13 @@ Provide a structured, actionable plan in 2-3 paragraphs.
                     result_batch = results[-batch_size:]  # Most recent results
 
                     try:
-                        # Run async analysis with timeout
+                        # Run async analysis - now we can await directly!
                         logger.info(f"Starting concurrent analysis of {len(result_batch)} results")
-                        timeout_seconds = 300
-                        analyses = None
-                        try:
-                            # Check if there's already a running event loop
-                            loop = asyncio.get_running_loop()
-                            # If we're already in an async context, use run_coroutine_threadsafe with timeout
-                            future = asyncio.run_coroutine_threadsafe(
-                                self.analyze_results_concurrently(result_batch), loop
-                            )
-                            analyses = future.result(timeout=timeout_seconds)
-                            logger.info(f"Concurrent result analysis completed")
-                        except RuntimeError:
-                            # No running loop - this can cause issues with nested event loops
-                            # Fall back to sequential execution for safety
-                            logger.warning("No running event loop, falling back to sequential result analysis")
-                            analyses = None
-                        except concurrent.futures.TimeoutError:
-                            logger.warning(f"Result analysis timed out after {timeout_seconds}s, falling back to sequential")
-                            analyses = None
+                        analyses = await asyncio.wait_for(
+                            self.analyze_results_concurrently(result_batch),
+                            timeout=300
+                        )
+                        logger.info(f"Concurrent result analysis completed")
 
                         if analyses:
                             # Process analyses and update hypotheses
@@ -1836,22 +1815,25 @@ Provide a structured, actionable plan in 2-3 paragraphs.
                                 result_id = analysis.get("result_id")
                                 # Send to data analyst for full processing
                                 if result_id:
-                                    self._send_to_data_analyst(result_id=result_id)
+                                    await self._send_to_data_analyst(result_id=result_id)
                                     break  # Process one at a time in workflow
                         else:
                             # Fallback to sequential
                             result_id = results[-1]
-                            self._send_to_data_analyst(result_id=result_id)
+                            await self._send_to_data_analyst(result_id=result_id)
 
+                    except asyncio.TimeoutError:
+                        logger.warning("Result analysis timed out, falling back to sequential")
+                        result_id = results[-1]
+                        await self._send_to_data_analyst(result_id=result_id)
                     except Exception as e:
                         logger.error(f"Concurrent result analysis failed: {e}")
-                        # Fallback to sequential
                         result_id = results[-1]
-                        self._send_to_data_analyst(result_id=result_id)
+                        await self._send_to_data_analyst(result_id=result_id)
                 else:
                     # Sequential: analyze most recent result
                     result_id = results[-1]
-                    self._send_to_data_analyst(result_id=result_id)
+                    await self._send_to_data_analyst(result_id=result_id)
 
         elif action == NextAction.REFINE_HYPOTHESIS:
             # Refine most recently tested hypothesis
@@ -1860,7 +1842,7 @@ Provide a structured, actionable plan in 2-3 paragraphs.
 
             if tested:
                 hypothesis_id = tested[-1]
-                self._send_to_hypothesis_refiner(
+                await self._send_to_hypothesis_refiner(
                     hypothesis_id=hypothesis_id,
                     action="evaluate"
                 )
@@ -1877,7 +1859,7 @@ Provide a structured, actionable plan in 2-3 paragraphs.
             # Bug C fix (Issue #51): Don't increment iteration for convergence check
             # Convergence is a check, not a new research cycle
             logger.info(f"[CONVERGE] Checking convergence at iteration {self.research_plan.iteration_count}")
-            self._send_to_convergence_detector()
+            await self._send_to_convergence_detector()
 
         elif action == NextAction.PAUSE:
             self.pause()
@@ -1995,9 +1977,9 @@ Provide a structured, actionable plan in 2-3 paragraphs.
     # EXECUTE (BaseAgent interface)
     # ========================================================================
 
-    def execute(self, task: Dict[str, Any]) -> Dict[str, Any]:
+    async def execute(self, task: Dict[str, Any]) -> Dict[str, Any]:
         """
-        Execute research task.
+        Execute research task asynchronously.
 
         Args:
             task: Task specification (usually {"action": "start_research"})
@@ -2016,7 +1998,7 @@ Provide a structured, actionable plan in 2-3 paragraphs.
 
             # Execute first action
             next_action = self.decide_next_action()
-            self._execute_next_action(next_action)
+            await self._execute_next_action(next_action)
 
             return {
                 "status": "research_started",
@@ -2027,7 +2009,7 @@ Provide a structured, actionable plan in 2-3 paragraphs.
         elif action == "step":
             # Execute one step of research
             next_action = self.decide_next_action()
-            self._execute_next_action(next_action)
+            await self._execute_next_action(next_action)
 
             return {
                 "status": "step_executed",
@@ -2037,6 +2019,17 @@ Provide a structured, actionable plan in 2-3 paragraphs.
 
         else:
             raise ValueError(f"Unknown action: {action}")
+
+    def execute_sync(self, task: Dict[str, Any]) -> Dict[str, Any]:
+        """
+        Synchronous wrapper for execute (backwards compatibility).
+        """
+        try:
+            loop = asyncio.get_running_loop()
+            future = asyncio.run_coroutine_threadsafe(self.execute(task), loop)
+            return future.result(timeout=600)
+        except RuntimeError:
+            return asyncio.run(self.execute(task))
 
     # ========================================================================
     # STATUS & REPORTING

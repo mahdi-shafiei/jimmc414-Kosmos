@@ -2,12 +2,17 @@
 Agent registry for discovering and managing agents.
 
 Provides centralized management of all active agents in the system.
+
+Async Architecture (Issue #66 fix):
+- _route_message() and send_message() are now async
+- Sync wrappers provided for backwards compatibility
 """
 
 from typing import Dict, List, Optional, Type, Any
 from kosmos.agents.base import BaseAgent, AgentMessage, AgentStatus
 import logging
 from datetime import datetime
+import asyncio
 
 
 logger = logging.getLogger(__name__)
@@ -219,9 +224,9 @@ class AgentRegistry:
     # MESSAGE ROUTING
     # ========================================================================
 
-    def _route_message(self, message: AgentMessage):
+    async def _route_message(self, message: AgentMessage):
         """
-        Internal callback for routing messages from agents.
+        Internal async callback for routing messages from agents.
 
         This is set as the message_router on agents when they register,
         allowing agent.send_message() to automatically deliver messages.
@@ -235,8 +240,8 @@ class AgentRegistry:
             logger.error(f"Cannot route message: target agent {message.to_agent} not found")
             return
 
-        # Deliver to recipient
-        to_agent.receive_message(message)
+        # Deliver to recipient asynchronously
+        await to_agent.receive_message(message)
 
         # Store in history
         self._message_history.append(message)
@@ -245,7 +250,20 @@ class AgentRegistry:
 
         logger.debug(f"Routed message from {message.from_agent} to {message.to_agent}")
 
-    def send_message(
+    def _route_message_sync(self, message: AgentMessage):
+        """
+        Synchronous wrapper for _route_message (backwards compatibility).
+        """
+        try:
+            loop = asyncio.get_running_loop()
+            future = asyncio.run_coroutine_threadsafe(
+                self._route_message(message), loop
+            )
+            return future.result(timeout=30)
+        except RuntimeError:
+            return asyncio.run(self._route_message(message))
+
+    async def send_message(
         self,
         from_agent_id: str,
         to_agent_id: str,
@@ -254,7 +272,7 @@ class AgentRegistry:
         correlation_id: Optional[str] = None
     ) -> AgentMessage:
         """
-        Route message from one agent to another.
+        Route message from one agent to another asynchronously.
 
         Args:
             from_agent_id: Sender agent ID
@@ -274,33 +292,54 @@ class AgentRegistry:
         if not to_agent:
             raise ValueError(f"To agent {to_agent_id} not found")
 
-        # Create and send message
+        # Create and send message asynchronously
         from kosmos.agents.base import MessageType
-        message = from_agent.send_message(
+        message = await from_agent.send_message(
             to_agent=to_agent_id,
             content=content,
             message_type=MessageType(message_type),
             correlation_id=correlation_id
         )
 
-        # Deliver to recipient
-        to_agent.receive_message(message)
-
-        # Store in history
+        # Note: message is already delivered via _route_message callback
+        # Store in history (redundant with _route_message, but kept for direct sends)
         self._message_history.append(message)
         if len(self._message_history) > self._max_history_size:
             self._message_history.pop(0)
 
         return message
 
-    def broadcast_message(
+    def send_message_sync(
+        self,
+        from_agent_id: str,
+        to_agent_id: str,
+        content: Dict[str, Any],
+        message_type: str = "request",
+        correlation_id: Optional[str] = None
+    ) -> AgentMessage:
+        """
+        Synchronous wrapper for send_message (backwards compatibility).
+        """
+        try:
+            loop = asyncio.get_running_loop()
+            future = asyncio.run_coroutine_threadsafe(
+                self.send_message(from_agent_id, to_agent_id, content, message_type, correlation_id),
+                loop
+            )
+            return future.result(timeout=30)
+        except RuntimeError:
+            return asyncio.run(
+                self.send_message(from_agent_id, to_agent_id, content, message_type, correlation_id)
+            )
+
+    async def broadcast_message(
         self,
         from_agent_id: str,
         content: Dict[str, Any],
         target_types: Optional[List[str]] = None
     ) -> List[AgentMessage]:
         """
-        Broadcast message to multiple agents.
+        Broadcast message to multiple agents asynchronously.
 
         Args:
             from_agent_id: Sender agent ID
@@ -324,18 +363,41 @@ class AgentRegistry:
         else:
             targets = [a for a in self._agents.values() if a.agent_id != from_agent_id]
 
-        # Send to all targets
-        for target in targets:
-            message = self.send_message(
+        # Send to all targets concurrently
+        send_tasks = [
+            self.send_message(
                 from_agent_id=from_agent_id,
                 to_agent_id=target.agent_id,
                 content=content,
                 message_type="notification"
             )
-            messages.append(message)
+            for target in targets
+        ]
+        messages = await asyncio.gather(*send_tasks)
 
         logger.info(f"Broadcast message from {from_agent_id} to {len(targets)} agents")
-        return messages
+        return list(messages)
+
+    def broadcast_message_sync(
+        self,
+        from_agent_id: str,
+        content: Dict[str, Any],
+        target_types: Optional[List[str]] = None
+    ) -> List[AgentMessage]:
+        """
+        Synchronous wrapper for broadcast_message (backwards compatibility).
+        """
+        try:
+            loop = asyncio.get_running_loop()
+            future = asyncio.run_coroutine_threadsafe(
+                self.broadcast_message(from_agent_id, content, target_types),
+                loop
+            )
+            return future.result(timeout=60)
+        except RuntimeError:
+            return asyncio.run(
+                self.broadcast_message(from_agent_id, content, target_types)
+            )
 
     def get_message_history(
         self,
