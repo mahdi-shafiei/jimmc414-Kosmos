@@ -1,8 +1,9 @@
 # Issue: SkillLoader Not Loading Skills
 
-**Status**: Open
+**Status**: ✅ CLOSED (Fixed in #67)
 **Priority**: High (blocks Gap 3 from OPENQUESTIONS_SOLUTION.md)
 **Created**: 2025-12-08
+**Resolved**: 2025-12-08
 
 ---
 

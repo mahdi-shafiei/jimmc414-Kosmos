@@ -78,9 +78,11 @@ kosmos/
 
 ### Current Known Issues
 
-1. **CLI Hangs**: `kosmos run` hangs because ResearchDirectorAgent uses message-passing but no agent runtime processes messages
-2. **SkillLoader Broken**: Returns None because COMMON_SKILLS references non-existent files (see `docs/ISSUE_SKILLLOADER_BROKEN.md`)
-3. **Agent Timing**: Individual agents work but are slow (19-89 seconds per call due to LLM latency)
+> **Note**: Issues #1 and #2 below have been **RESOLVED**. See `docs/PAPER_IMPLEMENTATION_GAPS.md` for full status.
+
+1. ~~**CLI Hangs**~~: ✅ FIXED (#66) - Full async refactor implemented
+2. ~~**SkillLoader Broken**~~: ✅ FIXED (#67) - Domain mapping and skill discovery working
+3. **Agent Timing**: Individual agents work but are slow (19-89 seconds per call due to LLM latency) - *This is expected behavior due to LLM API latency*
 
 ## Your Task
 

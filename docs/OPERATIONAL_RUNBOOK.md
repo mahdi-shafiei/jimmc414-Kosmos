@@ -537,7 +537,7 @@ ResearchPlan(
 | `proteomics` | pyopenms, matchms |
 | `clinical_research` | clinvar, clinicaltrials, omim-database |
 
-**Known Issue**: SkillLoader returns None because `COMMON_SKILLS` references non-existent files. See `docs/ISSUE_SKILLLOADER_BROKEN.md`.
+**Note**: SkillLoader issue was fixed in #67. Skills now load correctly for all domains. See `docs/ISSUE_SKILLLOADER_BROKEN.md` for historical context.
 
 ---
 
@@ -898,60 +898,52 @@ CACHE_TTL=3600          # 1 hour cache
 
 ## 7. Troubleshooting Guide
 
-### 7.1 CLI Hangs After Banner
+### 7.1 CLI Hangs After Banner ✅ RESOLVED
 
-**Symptom**: `kosmos run` starts, shows banner, then hangs indefinitely.
+> **Status**: Fixed in Issue #66 (commit 1d91f17)
 
-**Root Cause**: `ResearchDirectorAgent` uses message-passing architecture but no agent runtime processes the messages. Messages are sent but never received.
+**Original Symptom**: `kosmos run` started, showed banner, then hung indefinitely.
 
-**Diagnostic**:
+**Root Cause** (Fixed): `ResearchDirectorAgent` used synchronous message-passing but no agent runtime processed the messages.
+
+**Resolution**: Full async refactor implemented:
+- `kosmos/agents/base.py` - Async `send_message()`, `receive_message()`, `process_message()`
+- `kosmos/agents/registry.py` - Async message routing
+- `kosmos/agents/research_director.py` - Async `execute()` and all `_send_to_*()` methods
+- `kosmos/cli/commands/run.py` - Uses `asyncio.run()` at entry point
+
+**Current Usage**:
 ```bash
-timeout 30 kosmos run "Test question" --domain biology -i 1
-# If times out, confirms the hang issue
+kosmos run "Your research question" --domain biology -i 5
 ```
 
-**Solution**: Use direct agent invocation instead of CLI:
-```python
-from kosmos.agents.hypothesis_generator import HypothesisGeneratorAgent
+### 7.2 SkillLoader Returns None ✅ RESOLVED
 
-agent = HypothesisGeneratorAgent(config={})
-result = agent.generate_hypotheses(
-    research_question="Your question",
-    domain="biology"
-)
-```
+> **Status**: Fixed in Issue #67 (commit df310b5)
 
-Or use `ResearchWorkflow` directly:
-```python
-from kosmos.workflow.research_loop import ResearchWorkflow
-import asyncio
+**Original Symptom**: Skills not being loaded, agents used generic prompts.
 
-workflow = ResearchWorkflow(research_objective="Your question")
-result = asyncio.run(workflow.run(num_cycles=1))
-```
+**Root Cause** (Fixed): `COMMON_SKILLS` referenced non-existent files (pandas, numpy, matplotlib).
 
-### 7.2 SkillLoader Returns None
+**Resolution**:
+- Fixed `COMMON_SKILLS` to reference actual skill files
+- Added `DOMAIN_TO_BUNDLES` mapping for high-level domains
+- Now loads 114+ skills correctly
 
-**Symptom**: Skills not being loaded, agents use generic prompts.
-
-**Root Cause**: `COMMON_SKILLS` in `skill_loader.py` references non-existent files (pandas, numpy, matplotlib).
-
-**Diagnostic**:
+**Current Usage**:
 ```python
 from kosmos.agents.skill_loader import SkillLoader
 loader = SkillLoader()
-skills = loader.load_skills_for_task(task_type='research', domain='biology')
-print(skills)  # None
+
+# Domain mapping now works correctly
+skills = loader.load_skills_for_task(domain='biology')
+print(skills)  # Returns formatted skills text
+
+# Or use specific bundles
+skills = loader.load_skills_for_task(task_type='single_cell_analysis')
 ```
 
-**Solution**: Use domain-specific bundles instead:
-```python
-skills = loader.load_skills_for_task(
-    task_type='single_cell_analysis'  # Use bundle name, not domain
-)
-```
-
-See `docs/ISSUE_SKILLLOADER_BROKEN.md` for detailed fix instructions.
+See `docs/ISSUE_SKILLLOADER_BROKEN.md` for historical context.
 
 ### 7.3 LLM Connection Errors
 
@@ -1099,17 +1091,19 @@ kosmos run "Test" --domain biology -i 1
 | **Gap 0** | Context compression (1500 papers + 42K lines won't fit) | Implemented: 20:1 hierarchical compression |
 | **Gap 1** | State Manager schema undefined | Implemented: 4-layer hybrid architecture |
 | **Gap 2** | Task generation strategy undefined | Implemented: Plan Creator + Reviewer |
-| **Gap 3** | Agent integration undefined | Partial: SkillLoader broken, 116 skills available |
-| **Gap 4** | R vs Python ambiguity | Resolved: Python-only with Docker sandbox |
+| **Gap 3** | Agent integration undefined | ✅ Complete: SkillLoader fixed (#67), 114+ skills available |
+| **Gap 4** | R vs Python ambiguity | ✅ Complete: Python primary + R support via RExecutor (#69) |
 | **Gap 5** | Discovery validation undefined | Implemented: ScholarEval 8-dimension framework |
 
-### 8.3 Features Described in Paper Not Implemented
+### 8.3 Features Described in Paper - Implementation Status
 
-1. **166 data analysis rollouts**: Parallelism exists but not at this scale
-2. **R package support**: Python-only; use rpy2 for R packages
-3. **Multi-language kernel**: Single Python kernel only
-4. **Automatic package installation**: Not implemented
-5. **Discovery validation workflow**: Architecture exists, no validation study
+| Feature | Paper Claim | Status |
+|---------|-------------|--------|
+| **166 data analysis rollouts** | ~166 data analysis rollouts | ✅ Parallelism exists, tracked via RolloutTracker (#58) |
+| **R package support** | TwoSampleMR for Mendelian Randomization | ✅ Implemented via RExecutor (#69) |
+| **Multi-language kernel** | R + Python | ✅ Python primary + R via Rscript |
+| **Automatic package installation** | Dynamic imports | Partial: Pre-installed in Docker |
+| **Discovery validation workflow** | 7 validated discoveries | Framework exists (needs validation study)
 
 ### 8.4 Undocumented Behaviors
 
