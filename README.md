@@ -353,7 +353,7 @@ The system is suitable for experimentation and further development. Before produ
 - [archive/120625_code_review.md](archive/120625_code_review.md) - Code review (Dec 2025)
 
 ### Operations
-- [GETTING_STARTED.md](GETTING_STARTED.md) - Detailed usage examples
+- [archive/GETTING_STARTED.md](archive/GETTING_STARTED.md) - Detailed usage examples
 - [CONTRIBUTING.md](archive/CONTRIBUTING.md) - Development guidelines (archived)
 - [CHANGELOG.md](CHANGELOG.md) - Version history
 

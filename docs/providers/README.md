@@ -423,7 +423,7 @@ print(response.content)
 4. **Monitor costs** - Check your provider dashboard
 5. **Experiment** - Try different models for different tasks
 
-For migration from Claude-only setup, see [MIGRATION_MULTI_PROVIDER.md](../MIGRATION_MULTI_PROVIDER.md)
+For migration from Claude-only setup, see [MIGRATION_MULTI_PROVIDER.md](../../archive/MIGRATION_MULTI_PROVIDER.md)
 
 ---
 
