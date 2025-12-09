@@ -89,7 +89,7 @@ Skill not found: matplotlib
 - [x] 116 available skills accessible by name or bundle
 - [x] No "Skill not found" warnings for expected libraries
 
-**Related**: Full documentation in `docs/ISSUE_SKILLLOADER_BROKEN.md`
+**Related**: Historical documentation in `archive/issues/ISSUE_SKILLLOADER_BROKEN.md`
 
 ---
 

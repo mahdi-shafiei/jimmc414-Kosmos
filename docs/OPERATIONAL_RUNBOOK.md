@@ -537,7 +537,7 @@ ResearchPlan(
 | `proteomics` | pyopenms, matchms |
 | `clinical_research` | clinvar, clinicaltrials, omim-database |
 
-**Note**: SkillLoader issue was fixed in #67. Skills now load correctly for all domains. See `docs/ISSUE_SKILLLOADER_BROKEN.md` for historical context.
+**Note**: SkillLoader issue was fixed in #67. Skills now load correctly for all domains. See `archive/issues/ISSUE_SKILLLOADER_BROKEN.md` for historical context.
 
 ---
 
@@ -943,7 +943,7 @@ print(skills)  # Returns formatted skills text
 skills = loader.load_skills_for_task(task_type='single_cell_analysis')
 ```
 
-See `docs/ISSUE_SKILLLOADER_BROKEN.md` for historical context.
+See `archive/issues/ISSUE_SKILLLOADER_BROKEN.md` for historical context.
 
 ### 7.3 LLM Connection Errors
 

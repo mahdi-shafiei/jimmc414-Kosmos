@@ -167,7 +167,7 @@ To complete this task, read these files:
 1. `archive/implementation/OPEN_QUESTIONS.md` - Original gap analysis
 2. `archive/implementation/OPENQUESTIONS_SOLUTION.md` - Gap solutions
 3. `docs/E2E_DIAGNOSTIC.md` - Current system state
-4. `docs/ISSUE_SKILLLOADER_BROKEN.md` - Gap 3 status
+4. `archive/issues/ISSUE_SKILLLOADER_BROKEN.md` - Gap 3 status (resolved)
 5. `kosmos/agents/research_director.py` - Main orchestrator
 6. `kosmos/workflow/research_loop.py` - Research workflow
 7. `kosmos/orchestration/plan_creator.py` - Task generation
