@@ -270,16 +270,25 @@ from kosmos.config import KosmosConfig
 # Check system health
 kosmos doctor
 
-# Verify core imports
+# Verify core imports (all verified ✓)
 python -c "from kosmos.workflow import ResearchWorkflow; print('✓ Workflow')"
 python -c "from kosmos.agents.base import BaseAgent; print('✓ BaseAgent')"
 python -c "from kosmos.models.hypothesis import Hypothesis; print('✓ Hypothesis')"
+python -c "from kosmos.config import KosmosConfig; print('✓ KosmosConfig')"
 
 # Run quick sanity tests
 pytest tests/ -k "sanity" --tb=short -q
 
 # Check database
 python -c "from kosmos.db import get_engine; print('✓ DB')"
+```
+
+**Verification Results (as of generation):**
+```
+✓ ResearchWorkflow
+✓ BaseAgent, AgentMessage
+✓ Hypothesis
+✓ KosmosConfig
 ```
 
 ---
@@ -311,9 +320,25 @@ python .claude/skills/kosmos-xray/scripts/dependency_graph.py kosmos/ --focus wo
 ### Enhanced Skeleton Features
 The skeleton output now includes:
 - **Pydantic/dataclass fields** - `name: str = Field(...)` visible
-- **Decorators** - `@tool`, `@dataclass`, `@agent.register`
-- **Global constants** - `SYSTEM_PROMPT = "..."`, `CONFIG = {...}`
+- **Decorators** - `@dataclass`, `@property`, `@agent.register`
+- **Global constants** - `CONFIG_VAR = "value"`
 - **Line numbers** - `def method(): ...  # L42` for precise navigation
+
+**Example - @dataclass decorator visible:**
+```python
+@dataclass
+class PaperAnalysis:  # L34
+    paper_id: str  # L36
+    executive_summary: str  # L37
+    key_findings: List[Dict[str, Any]]  # L38
+    confidence_score: float  # L42
+```
+
+**Example - Global constants visible:**
+```python
+_DEFAULT_CLAUDE_SONNET_MODEL = "claude-sonnet-4-5"  # L17
+_DEFAULT_CLAUDE_HAIKU_MODEL = "claude-haiku-4-5"  # L18
+```
 
 ### Token Budget Reference
 | Operation | Tokens | Use When |
