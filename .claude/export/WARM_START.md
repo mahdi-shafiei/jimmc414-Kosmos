@@ -8,32 +8,64 @@
 
 ## 1. System Context
 
+### Workflow-Centric View
+```mermaid
+graph TD
+    subgraph ORCHESTRATION
+        kosmos_workflow_research_loop[research_loop]
+    end
+    subgraph CORE
+        kosmos_core_workflow[workflow]
+        kosmos_workflow_ensemble[ensemble]
+    end
+    kosmos_core_workflow --> kosmos_config
+    kosmos_workflow_ensemble --> kosmos_workflow_research_loop
+    kosmos_workflow_ensemble --> kosmos_safety_reproducibility
+    kosmos_workflow_research_loop --> kosmos_compression
+    kosmos_workflow_research_loop --> kosmos_world_model_artifacts
+    kosmos_workflow_research_loop --> kosmos_orchestration
+    kosmos_workflow_research_loop --> kosmos_validation
+    kosmos_workflow_research_loop --> kosmos_agents
+    kosmos_core_llm <-.-> kosmos_core_providers_anthropic
+    kosmos_world_model <-.-> kosmos_world_model_artifacts
+```
+
+### Full Architecture View
 ```mermaid
 graph TD
     subgraph ORCHESTRATION
         kosmos_agents_research_director[research_director]
-        kosmos_workflow_research_loop[research_loop]
-        kosmos_orchestration_delegation[delegation]
+        kosmos_core_providers_anthropic[anthropic]
+        kosmos_knowledge_semantic_search[semantic_search]
+        kosmos_core_providers_factory[factory]
+        kosmos_core_providers_openai[openai]
     end
     subgraph CORE
         kosmos_core_llm[llm]
-        kosmos_world_model_artifacts[artifacts]
-        kosmos_execution_code_executor[code_executor]
+        kosmos_knowledge_vector_db[vector_db]
+        kosmos_core_cache_manager[cache_manager]
+        kosmos_knowledge_graph[graph]
+        kosmos_literature_unified_search[unified_search]
     end
     subgraph FOUNDATION
         kosmos_config[config]
-        kosmos_agents_base[base]
         kosmos_models_hypothesis[hypothesis]
+        kosmos_literature_base_client[base_client]
+        kosmos_models_experiment[experiment]
+        kosmos_db[db]
     end
-    kosmos_workflow_research_loop --> kosmos_orchestration_delegation
-    kosmos_workflow_research_loop --> kosmos_world_model_artifacts
-    kosmos_workflow_research_loop --> kosmos_core_llm
-    kosmos_orchestration_delegation --> kosmos_agents_base
     kosmos_agents_research_director --> kosmos_agents_base
+    kosmos_agents_research_director --> kosmos_core_workflow
     kosmos_agents_research_director --> kosmos_core_llm
+    kosmos_core_providers_anthropic --> kosmos_core_providers_base
+    kosmos_core_providers_anthropic --> kosmos_config
+    kosmos_core_providers_factory --> kosmos_core_providers_anthropic
+    kosmos_core_providers_factory --> kosmos_core_providers_openai
+    kosmos_core_llm <-.-> kosmos_core_providers_anthropic
+    kosmos_world_model <-.-> kosmos_world_model_artifacts
 ```
 
-> To regenerate: `python .claude/skills/kosmos-xray/scripts/dependency_graph.py kosmos/ --root kosmos --mermaid`
+> Generated with: `python .claude/skills/kosmos-xray/scripts/dependency_graph.py kosmos/ --root kosmos --mermaid [--focus workflow]`
 
 ---
 
